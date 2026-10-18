@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # (code, zh_label, en_label)
 CATEGORIES = [
@@ -287,10 +287,12 @@ def load_exports(inbox: Path, issues: list[str]) -> list[Export]:
             issues.append(f"{zp.name}: suppliers.json unreadable ({e}), file skipped")
             zf.close()
             continue
-        if int(bundle.get("schemaVersion", 0)) != SCHEMA_VERSION:
-            issues.append(
-                f"{zp.name}: schema v{bundle.get('schemaVersion')} != v{SCHEMA_VERSION}, parsed anyway"
-            )
+        got = int(bundle.get("schemaVersion", 0))
+        if got == 0:
+            issues.append(f"{zp.name}: no schemaVersion field, parsed anyway")
+        elif got > SCHEMA_VERSION:
+            issues.append(f"{zp.name}: schema v{got} is newer than this script (v{SCHEMA_VERSION}) "
+                          "— update the scripts before trusting the output")
         unsafe = [n for n in zf.namelist() if not _safe_name(n)]
         if unsafe:
             issues.append(f"{zp.name}: ignored unsafe paths {unsafe[:3]}")
