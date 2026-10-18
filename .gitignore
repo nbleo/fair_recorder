@@ -1,0 +1,21 @@
+# Local, machine-specific configuration (company name, fair details)
+config.json
+
+# Supplier exports and generated reports — never commit these
+inbox/*.zip
+inbox/*.json
+output/
+sample/*.zip
+
+# Workspace internals
+.workbuddy/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db

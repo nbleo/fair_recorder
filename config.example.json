@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy to config.json and edit. config.json is gitignored — it never leaves this machine.",
+  "event": {
+    "name": "140th Canton Fair",
+    "phase": "Phase II (Bathroom Equipment / Building & Decorative Materials)",
+    "dates": "23-25 October 2026",
+    "venue": "Canton Fair Complex, Guangzhou, China",
+    "prepared_for": "e.g. \"HQ Sourcing - shower enclosure programme\""
+  }
+}
