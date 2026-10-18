@@ -23,7 +23,7 @@
 FairRecorder/
 ├─ app/                       现场录入 PWA（原生 JS，无构建链）—— Pages 的发布目录
 │  ├─ index.html              单页应用：主屏 / 展会 / 秒存 / 手动录入 / 补录 / 计划 / 导出 / 云备份
-│  ├─ sync.js                 GitHub 云备份（Git Data API + 私有校验 + 自动备份）
+│  ├─ sync.js                 云备份：Syncer 抽象 + 分块增量 + 串行调度 + 私有校验 + 可选加密
 │  ├─ manifest.webmanifest    安装到主屏的元数据
 │  ├─ sw.js                   Service Worker：离线缓存
 │  ├─ vendor/jszip.min.js     JSZip 3.10.1（本地内置，不依赖 CDN）
@@ -44,12 +44,14 @@ FairRecorder/
 │  ├─ build_report.py         汇总全流程（CLI 入口，按展会分组）
 │  ├─ fairlib.py              数据模型、合并、去重、评分、展会拆分
 │  ├─ push_via_api.py         走 REST API 推代码（git 协议被网络拦住时用）
-│  ├─ setup_github.py         建仓库 + 推代码 + 开 Pages（一次性）
+│  ├─ setup_github.py         建两个仓库（公开代码 / 私有数据）+ 推代码 + 开 Pages
+│  ├─ pull_cloud.py           从私有仓按人拉取展会数据 → inbox/（可直接出报告）
 │  ├─ make_sample.py          生成演示用样例导出（两届展会）
 │  └─ make_icons.py           生成 PWA 图标
 ├─ tests/
 │  ├─ test_build_report.py    22 项单元测试（含多展会隔离）
-│  └─ smoke_app.js            真机冒烟：Chromium 跑一遍新建展会→录入→切换→隔离
+│  ├─ test_cloud_crypto.py    JS 加密 ↔ Python 解密 的跨语言互操作（真浏览器）
+│  └─ smoke_app.js            真机冒烟：新建展会→录入→切换→隔离→同步页→程序仓拦截
 ├─ config.example.json        → 复制为 config.json 填收件方（gitignore）
 └─ requirements.txt           openpyxl / Pillow / python-docx
 ```
@@ -128,13 +130,16 @@ FairRecorder/
 
 主屏 → **☁️ 云备份** → 填好 owner / repo / branch / 云端根目录 / token → **保存** → **🔌 测试连接** → **⬆️ 立即备份**。
 
+「测试连接」会自动读出您的 GitHub 用户名作为命名空间；读不到时在「访问者命名空间」手填一个即可。
+
 - **不做实时同步**：只在手动点击或定时器到期时上传。展馆弱网也不会拖慢录入
 - **自动备份档位**：关闭 / 每 30 分钟 / 每 2 小时 / 每天（仅 App 打开时生效，默认只传元数据）
 - **备份内容**：仅元数据（几十 KB，弱网稳）或 元数据 + 原图（回酒店有 Wi-Fi 再点）
-- 已上传过的照片会跳过，不会重复传
+- **增量**：记录切成 200 条一块，只上传有改动的块；已传过的照片直接跳过
 - 首页卡片显示「N 条未上传」——这就是本地领先云端的改动数
 - 上传失败只写日志、不弹错误打断录入；**本地永远是第一副本**
 - **⬇️ 从云端恢复**用于换机或误删：只覆盖云端更新的版本，本地较新的不会被覆盖
+- 同一时刻只允许一个同步在跑，避免对同一个 git ref 并发提交导致失败
 
 ### B. 导出 ZIP（离线兜底）
 
@@ -190,12 +195,44 @@ python scripts/build_report.py --fair 2026-kitchen-bath-china   # 只出这一�
 
 ## 七、GitHub 仓库与部署
 
-两个仓库，各司其职：
+**两个仓库，彻底分开。程序在公开仓，数据在私有仓，两者永不混用。**
 
-| 仓库 | 可见性 | 内容 |
-|---|---|---|
-| `fair_recorder` | **公开** | PWA 代码，用 Pages 部署成 `https://nbleo.github.io/fair_recorder/` |
-| `fairrecorder-data` | **私有** | 供应商记录（元数据 + 照片），只有您的账号能读 |
+| 仓库 | 可见性 | 职责 | 里面有什么 |
+|---|---|---|---|
+| `fair_recorder` | **公开** | 主程序 | 只有 `app/` 源码 + Pages 部署产物。装到手机用的就是这个 |
+| `fairrecorder-data` | **私有** | 数据存储 | 按访问者分命名空间的供应商记录与照片 |
+
+程序仓是公开的，因为免费账户只有公开仓能开 GitHub Pages；**Pages 站点本身就
+没有访问控制**（与仓库私有无关），所以它只能放代码。公司名、供应商名单、照片、
+token 一概不进这个仓——`config.json`、`output/`、`inbox/` 全在 gitignore 里，
+`scripts/setup_github.py` 也会在两个仓同名时直接拒绝运行。
+
+### 数据仓的目录布局（按访问者隔离）
+
+```
+users/<github-login>/fairs/<展会ID>/meta.json            统计、分块索引、加密参数（明文）
+users/<github-login>/fairs/<展会ID>/suppliers-0.json     记录，每块 200 条
+users/<github-login>/fairs/<展会ID>/suppliers-200.json
+users/<github-login>/fairs/<展会ID>/assets/<照片ID>.jpg   产品图 / 名片
+```
+
+每个人只写自己的 `users/<login>/` 前缀，多人共用一个私有仓也不会互相覆盖。
+登录名在「测试连接」时自动取；读不到 `/user` 权限时可在界面手填命名空间。
+
+### 存储与同步逻辑（参考 glink25/Cent）
+
+Cent 是"纯前端 PWA + GitHub 仓库即数据库"的开源记账应用，本项目的同步层
+沿用了它的四个设计：
+
+| Cent 的做法 | 本项目对应实现 |
+|---|---|
+| IndexedDB 是真相源，同步只是备份通道 | 记录先落本机；同步失败只写日志，绝不阻断录入 |
+| `Syncer` 抽象（github / gitee / s3 / webdav 可替换） | `app/sync.js` 只依赖 `fetchStructure` / `fetchContent` / `uploadContent` / `getUserInfo` / `getCollaborators` 五个动作 |
+| 分块 + 增量上传（`itemsPerChunk`） | 记录按 id 排序切块（200/块），按 `updatedAt` 算出脏块只传变化的部分；照片传过不再重传 |
+| `Scheduler` 串行提交，避免 non-fast-forward | 同一时刻只允许一个同步在跑，后来的请求顶掉等待中的那个 |
+
+与 Cent 的差异：Cent 是"一个账本 = 一个仓库"，这里是"一个私有仓 + 按人分命名空间"，
+因为供应商数据要按人隔离，而不是拆成一堆仓库。另外额外提供了可选加密（见下）。
 
 一次性建仓 + 推代码 + 开 Pages：
 
@@ -244,10 +281,32 @@ GITHUB_TOKEN=<pat> python scripts/push_via_api.py --message "your commit message
 | 层 | 做法 |
 |---|---|
 | 仓库可见性 | 必须是 **Private**。上传前调 API 校验，公开仓库直接拒绝写入并提示 |
+| 程序仓拦截 | `nbleo/fair_recorder` 被写进黑名单，即使填了也会直接拒绝（冒烟测试有覆盖） |
 | token 授权 | fine-grained token，**Repository access 设为 All repositories**，权限只给 `Contents: Read and write`（+ `Pages`） |
-| 云端隔离 | 每届展会一个目录 `fairs/<展会ID>/suppliers.json`，照片在 `fairs/<展会ID>/photos/` |
-| 加人 | 仓库 → **Settings → Collaborators → Add people**，只邀请具体 GitHub 账号；**不要**把仓库改 Public |
-| 兜底 | 公开代码仓里没有任何供应商字段；`config.json`、导出产物、照片都在 gitignore 里 |
+| 按人隔离 | 数据落在 `users/<login>/…`，多人共仓互不覆盖 |
+| 加人 | 仓库 → **Settings → Collaborators → Add people**（应用内「管理可访问人员」按钮直达）；**不要**把仓库改 Public |
+| 可选加密 | 云端再套一层 AES-GCM-256（PBKDF2-SHA256 十万轮），密钥不上传；只加密记录与照片，`meta.json` 明文 |
+
+加密口令**只存在您输入它的那台设备上**，不上传云端——**忘记则云端数据无法恢复**
+（本机数据不受影响）。开启前先想清楚要不要走这条路；私有仓 + Collaborator 本身
+已经足够，加密是给"仓库万一被误设为公开"留的兜底。
+
+### 从云端直接出报告
+
+观展后不必再手动从手机导 ZIP，可以拉私有仓：
+
+```bash
+# 看看仓库里有哪些人、哪些展会
+GITHUB_TOKEN=<pat> python scripts/pull_cloud.py --owner nbleo --repo fairrecorder-data --list
+
+# 把 leo 名下所有展会拉成 ZIP 放进 inbox/
+GITHUB_TOKEN=<pat> python scripts/pull_cloud.py --owner nbleo --user leo --all-fairs
+
+# 若开了云端加密，加 --passphrase
+python scripts/build_report.py --inbox inbox --output output --top 5
+```
+
+`pull_cloud.py` 同样拒绝读公开仓、拒绝读程序仓。
 
 ---
 

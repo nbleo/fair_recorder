@@ -1,3 +1,6 @@
 openpyxl==3.1.5
 Pillow==12.3.0
 python-docx==1.2.0
+
+# only needed by scripts/pull_cloud.py when the cloud copy is encrypted
+cryptography>=42

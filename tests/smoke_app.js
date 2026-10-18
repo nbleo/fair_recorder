@@ -119,6 +119,44 @@ const check = (cond, m) => (cond ? ok(m) : bad(m));
   const pend = await page.evaluate(() => FR.pendingChanges());
   check(pend >= 1, `未上传改动计数 = ${pend}`);
 
+  // 9) 云同步页能渲染（新增身份/命名空间/加密/访问控制等元素）
+  await page.evaluate(() => go("sync"));
+  await new Promise((r) => setTimeout(r, 500));
+  const sync = await page.evaluate(() => {
+    const ids = ["syOwner", "syRepo", "syRoot", "syNamespace", "syToken", "syPass",
+      "syWho", "sySpace", "syVis", "syCollab", "syEnc", "syInvite"];
+    const missing = ids.filter((i) => !document.getElementById(i));
+    return {
+      missing,
+      root: (document.getElementById("syRoot") || {}).value,
+      visible: !document.getElementById("scr-sync").classList.contains("hide"),
+      hasCrypto: !!(window.FRSync && window.FRSync._crypto),
+    };
+  });
+  check(sync.missing.length === 0, `同步页元素齐全（缺失：${sync.missing.join(",") || "无"}）`);
+  check(sync.visible, "云同步页可见");
+  check(sync.root === "users", `云端根目录默认 users（实际 ${sync.root}）`);
+  check(sync.hasCrypto, "加密模块已挂载（JS↔Python 互操作测试依赖）");
+
+  // 10) 公开程序仓必须被拒绝
+  const guard = await page.evaluate(async () => {
+    const el = document.getElementById("syOwner");
+    document.getElementById("syOwner").value = "nbleo";
+    document.getElementById("syRepo").value = "fair_recorder";
+    document.getElementById("syToken").value = "dummy";
+    document.getElementById("sySave").click();
+    await new Promise((r) => setTimeout(r, 200));
+    try {
+      await window.FRSync.push("meta");
+      return "NOT BLOCKED";
+    } catch (e) {
+      return e.message;
+    } finally {
+      if (el) el.value = "";
+    }
+  });
+  check(/公开的程序仓库/.test(guard), `公开程序仓被拒绝写入（${guard.slice(0, 40)}）`);
+
   await browser.close();
 
   console.log("");

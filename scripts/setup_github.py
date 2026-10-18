@@ -65,14 +65,31 @@ def resolve_repo(token: str, owner: str, name: str, private: bool, desc: str) ->
 
 DATA_README = """# FairRecorder — private supplier store
 
-This repository is written by the FairRecorder PWA running on your phone.
-Keep it **private**.
+Written by the FairRecorder PWA on your phone. **Keep this repository private.**
 
-    data/suppliers.json   full record set (companies, contacts, scores, compliance)
-    data/photos/<id>.jpg  product / business-card photos, one file per photo
+## Layout — one namespace per person
 
-Nothing else belongs here. The public repo only holds the app source;
-no supplier data is ever pushed there.
+    users/<github-login>/fairs/<fair-id>/meta.json            counts, chunk index, crypto params
+    users/<github-login>/fairs/<fair-id>/suppliers-<n>.json   records, 200 per chunk
+    users/<github-login>/fairs/<fair-id>/assets/<photo>.jpg   product / business-card photos
+
+Each person writes only under their own `users/<login>/` prefix, so several
+people can share one private repo without overwriting each other.
+
+`meta.json` is intentionally plaintext (counts + the PBKDF2 salt); the record
+chunks and photos are AES-GCM ciphertext when encryption is switched on in the app.
+
+## Access control
+
+* Read access = repository access. Add someone at
+  **Settings → Collaborators → Add people** — do *not* make this repo public.
+* The app refuses to upload to a public repository, and refuses the public
+  code repository outright.
+
+## What does NOT belong here
+
+Anything about the program itself. The app source lives in the public repo and
+is deployed with GitHub Pages; supplier data must never be pushed there.
 """
 
 DATA_GITIGNORE = """.DS_Store
@@ -119,6 +136,12 @@ def main() -> int:
     owner = args.owner or me["login"]
     print(f"authenticated as {me['login']}  ->  owner '{owner}'\n")
 
+    # The two repos must never be the same: one is public (Pages), one is private.
+    if args.data_repo.lower() == args.code_repo.lower():
+        raise SystemExit("Refusing to run: --data-repo and --code-repo are the same.\n"
+                         "The code repo is public (GitHub Pages serves it to anyone) while\n"
+                         "supplier data must live in a separate PRIVATE repository.")
+
     print("repositories")
     code = resolve_repo(token, owner, args.code_repo, private=False,
                         desc="Offline-first supplier capture PWA for trade fairs (code only)")
@@ -160,11 +183,20 @@ def main() -> int:
               "  ->  Source: GitHub Actions")
 
     print()
+    print("Two repositories, two jobs:")
+    print(f"  PUBLIC  {owner}/{args.code_repo:<20} program only -> Pages")
+    print(f"  PRIVATE {owner}/{args.data_repo:<20} supplier records, per-person namespaces")
+    print()
     print("Fill in the app's Cloud Sync screen with:")
-    print(f"  owner  = {owner}")
-    print(f"  repo   = {args.data_repo}   <-- private")
-    print(f"  branch = {data_branch}")
-    print("  path   = data/suppliers.json")
+    print(f"  owner      = {owner}")
+    print(f"  repo       = {args.data_repo}   <-- private")
+    print(f"  branch     = {data_branch}")
+    print("  root       = users")
+    print("  namespace  = (auto-filled from your GitHub login after 'test connection')")
+    print()
+    print("Pull records down for reporting:")
+    print(f"  GITHUB_TOKEN=<pat> python scripts/pull_cloud.py --owner {owner} "
+          f"--repo {args.data_repo} --user <login> --all-fairs")
     print()
     print(f"PWA URL (live after the workflow finishes): "
           f"https://{owner}.github.io/{args.code_repo}/")

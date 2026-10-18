@@ -285,13 +285,17 @@ input[type=date]{min-height:var(--tap)}
 <!-- ============ SYNC（云备份） ============ -->
 <section id="scr-sync" class="hide">
   <div class="banner banner-info">
-    <div>🔒 <b>本地优先</b>：手机上每条记录先写本机 IndexedDB，云端只是备份。
-      不做实时同步——只在您点「立即备份」或<b>定时器到期</b>时才上传，展馆弱网也不会拖慢录入。</div>
+    <div>🔒 <b>本地优先</b>：每条记录先写本机 IndexedDB，云端只是备份。
+      不做实时同步——只在您点「立即备份」或<b>定时器到期</b>时上传，展馆弱网也不会拖慢录入。
+      <br>架构与数据布局参考 <b>glink25/Cent</b>：分块增量 + 串行提交 + 仓库私有。</div>
   </div>
 
   <div class="card">
     <div class="kv"><span class="k">本展会</span><span class="v" id="syFair">-</span></div>
+    <div class="kv"><span class="k">访问者身份</span><span class="v" id="syWho">未确定</span></div>
+    <div class="kv"><span class="k">云端命名空间</span><span class="v" id="sySpace">-</span></div>
     <div class="kv"><span class="k">仓库可见性</span><span class="v" id="syVis">未配置</span></div>
+    <div class="kv"><span class="k">可访问人员</span><span class="v" id="syCollab">-</span></div>
     <div class="kv"><span class="k">本地记录 / 照片</span><span class="v" id="syLocal">-</span></div>
     <div class="kv"><span class="k">未上传改动</span><span class="v" id="syPending">-</span></div>
     <div class="kv"><span class="k">上次备份</span><span class="v" id="syLast">从未</span></div>
@@ -332,8 +336,15 @@ input[type=date]{min-height:var(--tap)}
     <div class="field"><label>仓库拥有者 (owner)</label><input id="syOwner" type="text" placeholder="例如 nbleo" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <div class="field"><label>仓库名 (repo)</label><input id="syRepo" type="text" placeholder="例如 fairrecorder-data" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <div class="field"><label>分支</label><input id="syBranch" type="text" value="main" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
-    <div class="field"><label>云端根目录</label><input id="syRoot" type="text" value="fairs" autocapitalize="none" autocorrect="off" spellcheck="false">
-      <div class="tiny muted" style="margin-top:6px">每届展会单独一个目录：fairs/&lt;展会ID&gt;/suppliers.json</div>
+    <div class="field"><label>云端根目录</label><input id="syRoot" type="text" value="users" autocapitalize="none" autocorrect="off" spellcheck="false">
+      <div class="tiny muted" style="margin-top:6px">
+        按访问者隔离：<code>users/&lt;身份&gt;/fairs/&lt;展会ID&gt;/</code>。
+        每个人只写自己的命名空间，互不覆盖。
+      </div>
+    </div>
+    <div class="field"><label>访问者命名空间（读不到 GitHub 身份时手填）</label>
+      <input id="syNamespace" type="text" placeholder="例如 leo / buyer-wang" autocapitalize="none" autocorrect="off" spellcheck="false">
+      <div class="tiny muted" style="margin-top:6px">正常情况下「测试连接」会自动填入 GitHub 用户名，这一栏留空即可。</div>
     </div>
     <div class="field"><label>Personal Access Token</label>
       <input id="syToken" type="password" placeholder="github_pat_… / ghp_…" autocapitalize="none" autocorrect="off" spellcheck="false">
@@ -347,10 +358,35 @@ input[type=date]{min-height:var(--tap)}
     </div>
   </div>
 
-  <div class="banner banner-warn">
-    <div>⚠️ <b>仓库必须是 Private</b>。上传前会校验，公开仓库一律拒绝写入。
-      要给别人看：GitHub 仓库页 → <b>Settings → Collaborators → Add people</b>，
-      只邀请具体账号；不要把仓库改成 Public。</div>
+  <div class="sec">云端加密（可选）</div>
+  <div class="card">
+    <div class="field"><label>加密上传的数据</label>
+      <div class="chips" id="syEnc">
+        <button class="chip" data-v="off" aria-pressed="true">关闭（依赖私有仓库）</button>
+        <button class="chip" data-v="on" aria-pressed="false">开启 AES-GCM</button>
+      </div>
+    </div>
+    <div class="field"><label>加密口令</label>
+      <input id="syPass" type="password" placeholder="仅在开启加密时需要" autocapitalize="none" autocorrect="off" spellcheck="false">
+      <div class="tiny muted" style="margin-top:6px">
+        PBKDF2-SHA256 十万轮派生 + AES-GCM-256，密钥<b>不上传</b>；只加密记录与照片，
+        meta.json（统计数字与 salt）保持明文。<br>
+        <b style="color:var(--danger)">口令不保存在云端，忘记后云端数据无法恢复</b>——本机数据不受影响。
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">访问控制</div>
+  <div class="card">
+    <div class="tiny muted" style="line-height:1.7">
+      程序代码在<b>公开仓库</b>（Pages 站点，任何人可读），供应商数据只进<b>私有仓库</b>。
+      上传前会校验可见性；<b>公开仓库一律拒绝写入</b>，程序仓库也会被直接拦下。
+      <br>要让同事看到自己的数据：把他加为私有仓库的 Collaborator；
+      要让他录自己的数据：让他填同一个私有仓库，数据落在他自己的命名空间下。
+    </div>
+    <div style="margin-top:10px">
+      <button class="btn" id="syInvite">👥 管理可访问人员（GitHub 邀请页）</button>
+    </div>
   </div>
 
   <div class="sec">备份日志</div>
