@@ -33,22 +33,32 @@ def supplier(**kw) -> dict:
     return s
 
 
-def make_zip(path: Path, suppliers, plans=None, photos=None, created="2026-10-23T18:00:00+08:00"):
+def make_zip(path: Path, suppliers, plans=None, photos=None, created="2026-10-23T18:00:00+08:00",
+             fair=None):
     photos = photos or []
+    sid = suppliers[0]["id"] if suppliers else "s1"
     bundle = {
         "schemaVersion": F.SCHEMA_VERSION,
         "export": {"id": "e1", "deviceId": "d1", "createdAt": created, "mode": "full",
                    "counts": {}, "weights": F.DEFAULT_WEIGHTS, "event": {}},
         "suppliers": suppliers, "visitPlans": plans or [],
-        "photos": [{"id": p, "supplierId": "s1", "type": "product",
-                    "path": f"photos/s1/{p}.jpg", "sha256": "", "size": 4,
+        "photos": [{"id": p, "supplierId": sid, "type": "product",
+                    "path": f"photos/{sid}/{p}.jpg", "sha256": "", "size": 4,
                     "createdAt": created} for p in photos],
     }
+    if fair:
+        bundle["fair"] = fair
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("suppliers.json", json.dumps(bundle))
         for p in photos:
-            z.writestr(f"photos/s1/{p}.jpg", b"\xff\xd8\xff\xd9")
+            z.writestr(f"photos/{sid}/{p}.jpg", b"\xff\xd8\xff\xd9")
     return path
+
+
+FAIR_A = {"id": "fair-a", "name": "展会 A", "nameEn": "Fair A", "startDate": "2026-10-23",
+          "endDate": "2026-10-25", "city": "广州", "slug": "fair-a"}
+FAIR_B = {"id": "fair-b", "name": "展会 B", "nameEn": "Fair B", "startDate": "2026-05-26",
+          "endDate": "2026-05-29", "city": "上海", "slug": "fair-b"}
 
 
 class TestScoring(unittest.TestCase):
@@ -167,6 +177,83 @@ class TestComparability(unittest.TestCase):
         s = supplier(currency="USD", priceMin=180, priceMax=260, incoterm="FOB", priceUnit="set")
         self.assertIn("USD 180–260", F.price_text(s))
         self.assertIn("FOB", F.price_text(s))
+
+
+class TestFairs(unittest.TestCase):
+    """多展会：数据必须严格隔离，报告按展会分目录。"""
+
+    def _inbox(self, zips):
+        d = Path(tempfile.mkdtemp())
+        for name, suppliers, fair in zips:
+            make_zip(d / name, suppliers, fair=fair)
+        return d
+
+    def test_two_fairs_are_split(self):
+        a = supplier(id="a", fairId="fair-a")
+        b = supplier(id="b", fairId="fair-b", companyNameZh="另一家有限公司")
+        inbox = self._inbox([("a.zip", [a], FAIR_A), ("b.zip", [b], FAIR_B)])
+        out = Path(tempfile.mkdtemp())
+        ctxs, issues = F.build_all_contexts(inbox, out, top_n=3)
+        self.assertEqual(len(ctxs), 2)
+        by_id = {c.fair_id: c for c in ctxs}
+        self.assertEqual([s["id"] for s in by_id["fair-a"].suppliers], ["a"])
+        self.assertEqual([s["id"] for s in by_id["fair-b"].suppliers], ["b"])
+        self.assertEqual(by_id["fair-a"].fair_dir, "2026-fair-a")
+        self.assertEqual(by_id["fair-b"].fair_dir, "2026-fair-b")
+
+    def test_event_header_comes_from_the_fair(self):
+        a = supplier(id="a", fairId="fair-a")
+        inbox = self._inbox([("a.zip", [a], FAIR_A)])
+        out = Path(tempfile.mkdtemp())
+        ctxs, _ = F.build_all_contexts(inbox, out, top_n=3)
+        ev = ctxs[0].event
+        self.assertEqual(ev["name"], "Fair A")
+        self.assertEqual(ev["dates"], "2026-10-23..2026-10-25")
+        self.assertIn("广州", ev["venue"])
+
+    def test_config_override_does_not_leak_across_fairs(self):
+        """config.json 的 dates/name 不能覆盖另一届展会的抬头。"""
+        a = supplier(id="a", fairId="fair-a")
+        inbox = self._inbox([("a.zip", [a], FAIR_A)])
+        out = Path(tempfile.mkdtemp())
+        ctxs, _ = F.build_all_contexts(inbox, out, top_n=3,
+                                       event_override={"name": "Wrong Fair",
+                                                       "dates": "1999-01-01..1999-01-02",
+                                                       "prepared_for": "HQ"})
+        ev = ctxs[0].event
+        self.assertEqual(ev["name"], "Fair A")
+        self.assertEqual(ev["dates"], "2026-10-23..2026-10-25")
+        self.assertEqual(ev["prepared_for"], "HQ")   # 非展会字段仍来自 config
+
+    def test_only_fair_filter(self):
+        a = supplier(id="a", fairId="fair-a")
+        b = supplier(id="b", fairId="fair-b", companyNameZh="另一家有限公司")
+        inbox = self._inbox([("a.zip", [a], FAIR_A), ("b.zip", [b], FAIR_B)])
+        out = Path(tempfile.mkdtemp())
+        ctxs, _ = F.build_all_contexts(inbox, out, top_n=3, only_fair="fair-b")
+        self.assertEqual(len(ctxs), 1)
+        self.assertEqual(ctxs[0].fair_id, "fair-b")
+
+    def test_legacy_records_without_fair_id_still_work(self):
+        old = supplier(id="old")          # 老版本没有 fairId
+        inbox = self._inbox([("old.zip", [old], None)])
+        out = Path(tempfile.mkdtemp())
+        ctxs, _ = F.build_all_contexts(inbox, out, top_n=3)
+        self.assertEqual(len(ctxs), 1)
+        self.assertEqual(ctxs[0].fair_id, F.UNKNOWN_FAIR)
+        self.assertEqual(len(ctxs[0].suppliers), 1)
+
+    def test_photos_follow_their_fair(self):
+        a = supplier(id="a", fairId="fair-a", photoIds=["pa"])
+        b = supplier(id="b", fairId="fair-b", photoIds=["pb"], companyNameZh="另一家有限公司")
+        d = Path(tempfile.mkdtemp())
+        make_zip(d / "a.zip", [a], photos=["pa"], fair=FAIR_A)
+        make_zip(d / "b.zip", [b], photos=["pb"], fair=FAIR_B)
+        out = Path(tempfile.mkdtemp())
+        ctxs, _ = F.build_all_contexts(d, out, top_n=3)
+        by_id = {c.fair_id: c for c in ctxs}
+        self.assertEqual(sorted(by_id["fair-a"].photo_index), ["pa"])
+        self.assertEqual(sorted(by_id["fair-b"].photo_index), ["pb"])
 
 
 if __name__ == "__main__":

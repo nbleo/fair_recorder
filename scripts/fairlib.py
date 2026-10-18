@@ -302,6 +302,74 @@ def _iso(v: Any) -> str:
     return str(v or "")
 
 
+# --------------------------------------------------------------------------- 展会
+UNKNOWN_FAIR = "_unknown"
+
+
+def fair_id_of(s: dict) -> str:
+    """老版本导出没有 fairId，统一归到 _unknown，保证旧数据仍能出报告。"""
+    return str(s.get("fairId") or UNKNOWN_FAIR)
+
+
+def collect_fair_meta(exports: list[Export]) -> dict[str, dict]:
+    """fairId -> 展会元信息（同名展会以最新一次导出为准）。"""
+    meta: dict[str, dict] = {}
+    for ex in exports:
+        f = ex.bundle.get("fair")
+        if not isinstance(f, dict) or not f.get("id"):
+            continue
+        fid = str(f["id"])
+        stamp = _iso((ex.bundle.get("export") or {}).get("createdAt"))
+        prev = meta.get(fid)
+        if prev is None or stamp >= _iso(prev.get("_stamp")):
+            m = dict(f)
+            m["_stamp"] = stamp
+            meta[fid] = m
+    return meta
+
+
+def fair_dir_name(fid: str, meta: dict | None) -> str:
+    """报告输出目录名：2026-140th-canton-fair-phase-ii"""
+    meta = meta or {}
+    base = str(meta.get("slug") or meta.get("nameEn") or meta.get("name") or "")
+    if not base:
+        base = fid if fid != UNKNOWN_FAIR else "unfiled"
+    safe = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]+", "-", base).strip("-").lower()
+    if not safe:
+        safe = "fair"
+    year = str(meta.get("startDate") or "")[:4]
+    if not year or safe.startswith(year):      # slug 里已带年份就别重复
+        return safe
+    return f"{year}-{safe}"
+
+
+def fair_event(meta: dict | None) -> dict:
+    meta = meta or {}
+    dates = "..".join(x for x in (meta.get("startDate"), meta.get("endDate")) if x)
+    venue = " · ".join(x for x in (meta.get("venue"), meta.get("city")) if x)
+    # 不含 prepared_for：那是 config.json 的事，别让展会记录把它冲掉
+    return {
+        "name": meta.get("nameEn") or meta.get("name") or "Trade Fair",
+        "phase": meta.get("phase") or "",
+        "dates": dates,
+        "venue": venue,
+    }
+
+
+def _filter_export(ex: Export, fid: str) -> Export:
+    """把一份导出裁剪成只含某个展会的内容（记录 / 计划 / 照片）。"""
+    b = ex.bundle
+    nb = dict(b)
+    nb["suppliers"] = [s for s in (b.get("suppliers") or []) if fair_id_of(s) == fid]
+    nb["visitPlans"] = [p for p in (b.get("visitPlans") or [])
+                        if str(p.get("fairId") or UNKNOWN_FAIR) == fid]
+    ids = {s.get("id") for s in nb["suppliers"]}
+    nb["photos"] = [p for p in (b.get("photos") or [])
+                    if p.get("supplierId") in ids
+                    or str(p.get("fairId") or UNKNOWN_FAIR) == fid]
+    return Export(path=ex.path, bundle=nb, zf=ex.zf)
+
+
 def merge_suppliers(exports: list[Export], issues: list[str]) -> tuple[list[dict], dict]:
     """Upsert by id (newest updatedAt wins), then apply deletion tombstones."""
     merged: dict[str, dict] = {}
@@ -474,9 +542,23 @@ class Context:
 
 
 def build_context(inbox: Path, out_root: Path, top_n: int = 5,
-                  event_override: dict | None = None) -> Context:
+                  event_override: dict | None = None,
+                  fair_id: str | None = None,
+                  fair_meta: dict | None = None) -> Context:
+    """单展会上下文。fair_id 为 None 时把 inbox 里所有展会混在一起（兼容旧行为）。"""
     issues: list[str] = []
     exports = load_exports(inbox, issues)
+    if fair_id is not None:
+        exports = [_filter_export(ex, fair_id) for ex in exports]
+        meta = fair_meta if fair_meta is not None else collect_fair_meta(exports).get(fair_id) or {}
+    else:
+        meta = fair_meta or {}
+    return build_fair_context(exports, out_root, top_n, event_override, meta, issues)
+
+
+def build_fair_context(exports: list[Export], out_root: Path, top_n: int,
+                       event_override: dict | None, fair_meta: dict,
+                       issues: list[str]) -> Context:
     suppliers, tombs = merge_suppliers(exports, issues)
     suppliers, candidates = dedupe_business(suppliers, issues)
     plans = merge_plans(exports)
@@ -522,20 +604,23 @@ def build_context(inbox: Path, out_root: Path, top_n: int = 5,
 
     suppliers.sort(key=sort_key)
 
-    # Neutral defaults: anything customer-specific comes from config.json (never committed).
+    # 抬头优先级：手机端展会记录 > config.json > 中性默认值。
+    # 注意顺序：config 先落地（提供 prepared_for 这类通用字段），
+    # 展会自带的 name/phase/dates/venue 再覆盖它——否则多展会时会被 config 串味。
     event = {
-        "name": "Canton Fair",
-        "phase": "",
-        "dates": "",
-        "venue": "",
+        "name": "Trade Fair", "phase": "", "dates": "", "venue": "",
         "prepared_for": "Sourcing team",
     }
     if isinstance(event_override, dict):
         event.update({k: v for k, v in event_override.items() if v})
+    event.update({k: v for k, v in fair_event(fair_meta).items() if v})
     for ex in exports:
         ev = (ex.bundle.get("export") or {}).get("event")
-        if isinstance(ev, dict) and ev.get("dates"):
-            event["dates"] = ev["dates"]
+        if isinstance(ev, dict):
+            if not event.get("dates") and ev.get("dates"):
+                event["dates"] = ev["dates"]
+            if not event.get("name") and ev.get("name"):
+                event["name"] = ev["name"]
 
     ctx = Context(
         suppliers=suppliers, plans=plans, photo_index=photo_index,
@@ -547,7 +632,62 @@ def build_context(inbox: Path, out_root: Path, top_n: int = 5,
     )
     ctx.duplicate_candidates = candidates  # type: ignore[attr-defined]
     ctx.tombstones = len(tombs)  # type: ignore[attr-defined]
+    ctx.fair = dict(fair_meta or {})  # type: ignore[attr-defined]
+    ctx.fair_id = str((fair_meta or {}).get("id") or UNKNOWN_FAIR)  # type: ignore[attr-defined]
+    ctx.fair_dir = fair_dir_name(ctx.fair_id, fair_meta)  # type: ignore[attr-defined]
     return ctx
+
+
+def build_all_contexts(inbox: Path, out_root: Path, top_n: int = 5,
+                       event_override: dict | None = None,
+                       only_fair: str | None = None) -> tuple[list[Context], list[str]]:
+    """按展会拆分成多份上下文，每份一个输出子目录。
+
+    only_fair 可填展会 id、输出目录名或 slug，只出该展会；None = 全部。
+    """
+    global_issues: list[str] = []
+    exports = load_exports(inbox, global_issues)
+    fmeta = collect_fair_meta(exports)
+
+    order: list[str] = []
+    for ex in exports:
+        for s in ex.bundle.get("suppliers") or []:
+            fid = fair_id_of(s)
+            if fid not in order:
+                order.append(fid)
+    if not order:
+        order = [UNKNOWN_FAIR]
+
+    if only_fair:
+        key = str(only_fair).lower()
+
+        def matches(fid: str) -> bool:
+            meta = fmeta.get(fid) or {}
+            hay = " ".join(str(x or "").lower() for x in (
+                fid, fair_dir_name(fid, meta), meta.get("slug"),
+                meta.get("name"), meta.get("nameEn")))
+            return key == fid.lower() or key in hay
+
+        order = [f for f in order if matches(f)]
+        if not order:
+            global_issues.append(f"no fair matched --fair {only_fair!r}")
+
+    contexts: list[Context] = []
+    for fid in order:
+        meta = fmeta.get(fid) or {}
+        sub = out_root / fair_dir_name(fid, meta)
+        sub.mkdir(parents=True, exist_ok=True)
+        (sub / "data").mkdir(parents=True, exist_ok=True)
+        sub_exports = [_filter_export(ex, fid) for ex in exports]
+        issues: list[str] = []
+        ctx = build_fair_context(sub_exports, sub, top_n, event_override, meta, issues)
+        ctx.fair_id = fid  # type: ignore[attr-defined]
+        ctx.fair = meta    # type: ignore[attr-defined]
+        ctx.fair_dir = fair_dir_name(fid, meta)  # type: ignore[attr-defined]
+        contexts.append(ctx)
+
+    contexts.sort(key=lambda c: (str((c.fair or {}).get("startDate") or "9"), c.fair_dir))  # type: ignore[attr-defined]
+    return contexts, global_issues
 
 
 def grouped_by_category(ctx: Context) -> list[tuple[str, str, list[dict]]]:

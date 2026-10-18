@@ -12,6 +12,7 @@ import base64
 import io
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -716,11 +717,13 @@ def main(argv=None) -> int:
     ap.add_argument("--top", type=int, default=5, help="how many suppliers to feature as recommendations")
     ap.add_argument("--config", default=str(root / "config.json"),
                     help="optional local config.json (event title, recipient) — never committed")
+    ap.add_argument("--fair", default=None,
+                    help="只出某一届展会：可填展会 id、slug 或输出目录名（默认全部）")
+    ap.add_argument("--list-fairs", action="store_true", help="列出 inbox 里的展会后退出")
     args = ap.parse_args(argv)
 
     inbox, out = Path(args.inbox), Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "data").mkdir(parents=True, exist_ok=True)
 
     event_override = {}
     cfg = Path(args.config)
@@ -732,55 +735,99 @@ def main(argv=None) -> int:
         except (json.JSONDecodeError, OSError) as ex:
             print(f"warning: could not read {cfg} ({ex})")
 
-    ctx = F.build_context(inbox, out, top_n=args.top, event_override=event_override)
+    if args.list_fairs:
+        ctxs, _ = F.build_all_contexts(inbox, out, top_n=args.top, event_override=event_override)
+        if not ctxs:
+            print("no fairs found in", inbox)
+            return 0
+        for c in ctxs:
+            f = c.fair or {}
+            print(f"  {c.fair_dir:<44} id={c.fair_id}  "
+                  f"{len(c.suppliers)} suppliers  {f.get('name') or f.get('nameEn') or ''}")
+        return 0
 
-    master = out / "Supplier_Master.xlsx"
-    comp = out / "Category_Comparison.xlsx"
-    html_path = out / "Supplier_Report_EN.html"
-    docx_path = out / "Supplier_Report_EN.docx"
+    contexts, global_issues = F.build_all_contexts(
+        inbox, out, top_n=args.top, event_override=event_override, only_fair=args.fair)
 
-    write_master_xlsx(ctx, master)
-    write_comparison_xlsx(ctx, comp)
-    write_html(ctx, html_path)
-    write_docx(ctx, docx_path)
+    index: list[dict] = []
+    for ctx in contexts:
+        sub = out / ctx.fair_dir
+        master = sub / "Supplier_Master.xlsx"
+        comp = sub / "Category_Comparison.xlsx"
+        html_path = sub / "Supplier_Report_EN.html"
+        docx_path = sub / "Supplier_Report_EN.docx"
 
-    merged = out / "data" / "suppliers_merged.json"
-    merged.write_text(json.dumps({
-        "generatedAt": ctx.generated_at,
-        "event": ctx.event,
-        "weights": ctx.weights,
-        "suppliers": ctx.suppliers,
-        "visitPlans": ctx.plans,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_master_xlsx(ctx, master)
+        write_comparison_xlsx(ctx, comp)
+        write_html(ctx, html_path)
+        write_docx(ctx, docx_path)
 
-    (out / "validation.json").write_text(json.dumps({
-        "generatedAt": ctx.generated_at,
-        "python": sys.version.split()[0],
-        "exports": ctx.exports,
-        "counts": {
+        merged = sub / "data" / "suppliers_merged.json"
+        merged.write_text(json.dumps({
+            "generatedAt": ctx.generated_at,
+            "fair": ctx.fair,
+            "event": ctx.event,
+            "weights": ctx.weights,
+            "suppliers": ctx.suppliers,
+            "visitPlans": ctx.plans,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        (sub / "validation.json").write_text(json.dumps({
+            "generatedAt": ctx.generated_at,
+            "python": sys.version.split()[0],
+            "fair": ctx.fair,
+            "exports": ctx.exports,
+            "counts": {
+                "suppliers": len(ctx.suppliers),
+                "rated": len([s for s in ctx.suppliers if s["_rankable"]]),
+                "drafts": len([s for s in ctx.suppliers if s["_state"] == "draft"]),
+                "photos": len(ctx.photo_index),
+                "visitPlans": len(ctx.plans),
+                "tombstones": getattr(ctx, "tombstones", 0),
+            },
+            "duplicateCandidates": getattr(ctx, "duplicate_candidates", []),
+            "issues": ctx.issues,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        picks = F.top_picks(ctx)
+        index.append({
+            "fairId": ctx.fair_id,
+            "dir": ctx.fair_dir,
+            "name": (ctx.fair or {}).get("name") or ctx.event.get("name"),
+            "nameEn": (ctx.fair or {}).get("nameEn") or "",
+            "phase": (ctx.fair or {}).get("phase") or ctx.event.get("phase"),
+            "dates": ctx.event.get("dates"),
+            "venue": ctx.event.get("venue"),
             "suppliers": len(ctx.suppliers),
             "rated": len([s for s in ctx.suppliers if s["_rankable"]]),
-            "drafts": len([s for s in ctx.suppliers if s["_state"] == "draft"]),
             "photos": len(ctx.photo_index),
-            "visitPlans": len(ctx.plans),
-            "tombstones": getattr(ctx, "tombstones", 0),
-        },
-        "duplicateCandidates": getattr(ctx, "duplicate_candidates", []),
-        "issues": ctx.issues,
+            "top": [{"company": s["_company"], "score": s["_score"], "tier": s["_tier"]}
+                    for s in picks],
+            "report": f"{ctx.fair_dir}/Supplier_Report_EN.docx",
+        })
+
+        print(f"[{ctx.fair_dir}]")
+        print(f"  Suppliers : {len(ctx.suppliers)}  "
+              f"(rated {len([s for s in ctx.suppliers if s['_rankable']])}, "
+              f"draft {len([s for s in ctx.suppliers if s['_state'] == 'draft'])})")
+        print(f"  Photos    : {len(ctx.photo_index)}")
+        if ctx.issues:
+            print(f"  Issues    : {len(ctx.issues)}")
+            for i in ctx.issues[:10]:
+                print("     - " + i)
+
+    (out / "index.json").write_text(json.dumps({
+        "generatedAt": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "inbox": str(inbox),
+        "globalIssues": global_issues,
+        "fairs": index,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"Suppliers : {len(ctx.suppliers)}  "
-          f"(rated {len([s for s in ctx.suppliers if s['_rankable']])}, "
-          f"draft {len([s for s in ctx.suppliers if s['_state'] == 'draft'])})")
-    print(f"Photos    : {len(ctx.photo_index)}")
-    print(f"Exports   : {len(ctx.exports)} merged from {inbox}")
-    if ctx.issues:
-        print(f"Issues    : {len(ctx.issues)}")
-        for i in ctx.issues[:20]:
-            print("   - " + i)
-    print("Written   :")
-    for p in (master, comp, docx_path, html_path, merged, out / "validation.json"):
-        print(f"   {p}")
+    print()
+    print(f"Fairs     : {len(contexts)}")
+    for row in index:
+        print(f"   {row['dir']:<44} {row['suppliers']} suppliers → {row['report']}")
+    print(f"Index     : {out / 'index.json'}")
     return 0
 
 

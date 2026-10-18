@@ -1,7 +1,13 @@
 """Create demo exports so the whole pipeline can be exercised end to end.
 
-Writes two ZIPs (day 1 + day 2, the second one revising one record and deleting
-another) into sample/, ready to be dropped into inbox/.
+Produces ZIPs for **two different fairs** (to prove the report splits per fair)
+plus a day-2 revision of the first fair:
+
+    FairRecorder-canton140-2-full-*.zip   140th Canton Fair, Phase II — day 1
+    FairRecorder-canton140-2-daily-*.zip  same fair — day 2 (+ one revision)
+    FairRecorder-kbc2026-full-*.zip       Shanghai KBC — a second, unrelated fair
+
+Drop them all into inbox/ and run build_report.py; each fair gets its own folder.
 """
 from __future__ import annotations
 
@@ -16,10 +22,28 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "sample"
-SCHEMA = 1
+SCHEMA = 2
 WEIGHTS = {"fit": 25, "compliance": 25, "quality": 15, "price": 15, "capacity": 10, "communication": 10}
 DAY1 = "2026-10-23T18:00:00+08:00"
 DAY2 = "2026-10-24T19:30:00+08:00"
+KBCDAY = "2026-05-27T17:20:00+08:00"
+
+FAIR_A = "fair-2026-canton-140-phase2"
+FAIR_B = "fair-2026-kbc-shanghai"
+
+FAIR_A_META = {
+    "id": FAIR_A, "name": "第140届广交会 第二期", "nameEn": "140th Canton Fair — Phase II",
+    "phase": "Phase II · Bathroom Equipment / Building & Decorative Materials",
+    "city": "广州", "venue": "广交会展馆", "area": "卫浴设备",
+    "startDate": "2026-10-23", "endDate": "2026-10-25",
+    "slug": "2026-140th-canton-fair-phase-ii",
+}
+FAIR_B_META = {
+    "id": FAIR_B, "name": "2026 上海 KBC 厨卫展", "nameEn": "Kitchen & Bath China 2026",
+    "phase": "Kitchen & Bath", "city": "上海", "venue": "上海新国际博览中心",
+    "area": "厨房 / 卫浴", "startDate": "2026-05-26", "endDate": "2026-05-29",
+    "slug": "2026-kitchen-bath-china",
+}
 
 
 def font(size: int):
@@ -54,6 +78,7 @@ def comp(**kw):
 def sup(**kw):
     s = {
         "id": kw.pop("id", str(uuid.uuid4())),
+        "fairId": FAIR_A,
         "source": "walk_in", "previsitId": None,
         "companyNameZh": "", "companyNameEn": "", "hall": "A区", "area": "卫浴设备", "boothNo": "",
         "contactName": "", "contactTitle": "", "phone": "", "wechat": "", "email": "", "website": "",
@@ -234,22 +259,73 @@ S8 = sup(
     notes="密封条专业厂，价格有优势；配合度好，愿意打样。",
 )
 
+# --- 第二场展会（上海 KBC）：证明多展会互不干扰 ---------------------------
+S9 = sup(
+    id="s-0101", fairId=FAIR_B, source="planned", previsitId="p-0101",
+    companyNameZh="杭州朗斯卫浴有限公司",
+    companyNameEn="Langsi Bathroom Co., Ltd.",
+    hall="W3", area="厨房 / 卫浴", boothNo="W3-C18",
+    contactName="何静", contactTitle="Manager 经理",
+    phone="+86 139 0571 2233", wechat="langsi_hejing", email="hejing@langsi-bath.cn",
+    categories=["shower_enclosure", "vanity"],
+    productDetails="Mid-range shower enclosures and bathroom vanities, 6 mm glass, "
+                   "aluminium frame, own assembly line.",
+    models="LS-6600",
+    moqValue=60, currency="USD", priceMin=150, priceMax=225, priceUnit="set", incoterm="FOB",
+    leadTimeDays=38, capacityValue=6000, capacityUnit="sets/month",
+    exportMarkets=["EU (other) 欧盟其他"], euGermanyExperience="Unknown",
+    compliance=comp(CE=("copy_received", "CE-2025-3301"), EN14428=("document_seen", ""),
+                    EN12150=("copy_received", ""), REACH=("copy_received", ""),
+                    ISO9001=("copy_received", "ISO-2022-1180")),
+    score={"fit": 4, "compliance": 4, "quality": 3, "price": 4, "capacity": 3, "communication": 4},
+    followUpStatus="quote", nextAction="索要 EUR 报价与 EN 14428 副本", nextActionDate="2026-06-10",
+    notes="KBC 现场整机做工不错，价格比广交会那批略低，可作为备选。",
+)
+
+S10 = sup(
+    id="s-0102", fairId=FAIR_B,
+    companyNameZh="温州精工密封科技有限公司",
+    companyNameEn="Jinggong Sealing Technology Co., Ltd.",
+    hall="W2", area="厨房 / 卫浴", boothNo="W2-A07",
+    contactName="林峰", contactTitle="Engineer 工程师",
+    phone="+86 137 5777 6611", email="linfeng@jg-seal.cn",
+    categories=["seal"],
+    productDetails="Silicone and TPE seals for shower doors, co-extruded magnetic strips.",
+    moqValue=5000, currency="CNY", priceMin=3.1, priceMax=6.9, priceUnit="m", incoterm="EXW",
+    leadTimeDays=18, capacityValue=150000, capacityUnit="m/month",
+    exportMarkets=["Germany 德国"], euGermanyExperience="Yes",
+    compliance=comp(REACH=("copy_received", ""), RoHS=("copy_received", ""),
+                    KTW=("document_seen", ""), ISO9001=("document_seen", "")),
+    score={"fit": 4, "compliance": 4, "quality": 4, "price": 4, "capacity": 4, "communication": 4},
+    followUpStatus="sample", nextAction="寄样：磁条 + 硅胶密封条各 5 米", nextActionDate="2026-06-08",
+    notes="唯一现场出示 KTW 文件的密封件厂，值得送样。",
+)
+
 PLANS = [
-    {"id": "p-0001", "companyName": "佛山市南海区金莎卫浴有限公司", "boothNo": "10.2B31",
+    {"id": "p-0001", "fairId": FAIR_A, "companyName": "佛山市南海区金莎卫浴有限公司", "boothNo": "10.2B31",
      "goal": "重点：整体淋浴房主力供应商", "priority": "A", "note": "德国总部指定要看",
      "status": "visited", "supplierId": "s-0001", "createdAt": DAY1, "updatedAt": DAY1, "deletedAt": None},
-    {"id": "p-0002", "companyName": "江门市华艺卫浴实业有限公司", "boothNo": "9.3D12",
+    {"id": "p-0002", "fairId": FAIR_A, "companyName": "江门市华艺卫浴实业有限公司", "boothNo": "9.3D12",
      "goal": "滑轮铰链配件", "priority": "A", "note": "", "status": "visited",
      "supplierId": "s-0003", "createdAt": DAY1, "updatedAt": DAY1, "deletedAt": None},
-    {"id": "p-0003", "companyName": "佛山市顺德区欧陆卫浴制造有限公司", "boothNo": "10.2B07",
+    {"id": "p-0003", "fairId": FAIR_A, "companyName": "佛山市顺德区欧陆卫浴制造有限公司", "boothNo": "10.2B07",
      "goal": "淋浴房 + 石基", "priority": "B", "note": "合规文件最全", "status": "visited",
      "supplierId": "s-0005", "createdAt": DAY1, "updatedAt": DAY1, "deletedAt": None},
-    {"id": "p-0004", "companyName": "广州理想淋浴房制造有限公司", "boothNo": "11.2B41",
+    {"id": "p-0004", "fairId": FAIR_A, "companyName": "广州理想淋浴房制造有限公司", "boothNo": "11.2B41",
      "goal": "备选整体淋浴房", "priority": "B", "note": "未找到展位", "status": "planned",
      "supplierId": None, "createdAt": DAY1, "updatedAt": DAY1, "deletedAt": None},
-    {"id": "p-0005", "companyName": "佛山市南海区冠星卫浴有限公司", "boothNo": "10.2A15",
+    {"id": "p-0005", "fairId": FAIR_A, "companyName": "佛山市南海区冠星卫浴有限公司", "boothNo": "10.2A15",
      "goal": "底盆与石基", "priority": "C", "note": "时间不够，跳过", "status": "skipped",
      "supplierId": None, "createdAt": DAY1, "updatedAt": DAY1, "deletedAt": None},
+]
+
+PLANS_B = [
+    {"id": "p-0101", "fairId": FAIR_B, "companyName": "杭州朗斯卫浴有限公司", "boothNo": "W3-C18",
+     "goal": "整体淋浴房备选", "priority": "A", "note": "KBC 新面孔", "status": "visited",
+     "supplierId": "s-0101", "createdAt": KBCDAY, "updatedAt": KBCDAY, "deletedAt": None},
+    {"id": "p-0102", "fairId": FAIR_B, "companyName": "苏州未来卫浴科技有限公司", "boothNo": "W4-B22",
+     "goal": "智能淋浴房", "priority": "C", "note": "展位没找到", "status": "planned",
+     "supplierId": None, "createdAt": KBCDAY, "updatedAt": KBCDAY, "deletedAt": None},
 ]
 
 # photos: (supplier_id, type, title, hue)
@@ -268,17 +344,24 @@ PHOTO_SPEC = [
     ("s-0006", "product", "Zinc alloy hardware", 70),
     ("s-0008", "booth", "Booth 14.2F09", 20),
     ("s-0008", "product", "Magnetic seals & PVC strips", 180),
+    ("s-0101", "booth", "Booth W3-C18", 35),
+    ("s-0101", "product", "Enclosure LS-6600", 220),
+    ("s-0102", "product", "Silicone & magnetic seals", 150),
 ]
 
 
 def build_photos(all_suppliers):
     """Returns {photo_id: (bytes, meta)} and wires photoIds onto suppliers."""
     out = {}
+    fair_of = {s["id"]: s.get("fairId") for s in all_suppliers}
+    wanted = set(fair_of)
     for sid, ptype, title, hue in PHOTO_SPEC:
+        if sid not in wanted:
+            continue
         data = make_image(title, f"{title} · demo image", hue)
         pid = "ph-" + hashlib.sha1(f"{sid}{ptype}{title}".encode()).hexdigest()[:12]
         out[pid] = (data, {
-            "id": pid, "supplierId": sid, "type": ptype,
+            "id": pid, "fairId": fair_of.get(sid), "supplierId": sid, "type": ptype,
             "path": f"photos/{sid}/{pid}.jpg",
             "sha256": hashlib.sha256(data).hexdigest(),
             "size": len(data), "createdAt": DAY1,
@@ -289,25 +372,32 @@ def build_photos(all_suppliers):
     return out
 
 
-def write_zip(path: Path, suppliers, plans, photos, created_at, mode="full"):
+def write_zip(path: Path, suppliers, plans, photos, created_at, mode, fair_meta):
     metas = [m for _, m in (photos[pid] for pid in sorted(photos))]
+    ids = {s["id"] for s in suppliers}
+    metas = [m for m in metas if m["supplierId"] in ids]
+    event = {
+        "name": fair_meta["nameEn"], "phase": fair_meta["phase"],
+        "dates": f"{fair_meta['startDate']}..{fair_meta['endDate']}",
+        "venue": f"{fair_meta['venue']} · {fair_meta['city']}",
+    }
     bundle = {
         "schemaVersion": SCHEMA,
         "export": {
             "id": str(uuid.uuid4()), "deviceId": "demo-device", "createdAt": created_at, "mode": mode,
-            "appVersion": "1.0.0",
+            "appVersion": "1.1.0",
             "counts": {"suppliers": len(suppliers), "photos": len(metas), "plans": len(plans), "tombstones": 0},
-            "weights": WEIGHTS,
-            "event": {"name": "140th Canton Fair", "phase": "Phase II", "dates": "2026-10-23..2026-10-25"},
+            "weights": WEIGHTS, "event": event,
         },
+        "fair": dict(fair_meta),
         "suppliers": suppliers,
         "visitPlans": plans,
         "photos": metas,
     }
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("suppliers.json", json.dumps(bundle, ensure_ascii=False), compress_type=zipfile.ZIP_DEFLATED)
-        for pid in sorted(photos):
-            data, meta = photos[pid]
+        for meta in metas:
+            data, _ = photos[meta["id"]]
             z.writestr(meta["path"], data, compress_type=zipfile.ZIP_STORED)
     return path
 
@@ -315,10 +405,13 @@ def write_zip(path: Path, suppliers, plans, photos, created_at, mode="full"):
 def main() -> None:
     import copy
     OUT.mkdir(parents=True, exist_ok=True)
+    for old in OUT.glob("*.zip"):
+        old.unlink()
 
+    # ---- 展会 A：广交会第二期，两天两次导出 ----
     day1 = [copy.deepcopy(s) for s in (S1, S2, S3, S4, S6)]
     day2_src = [copy.deepcopy(s) for s in (S5, S7, S8)]
-    photos = build_photos(day1 + day2_src)
+    photosA = build_photos(day1 + day2_src)
 
     # day 2 also revises S1 (booth corrected + note) — exercises "newest wins" upsert.
     # Copy from the day-1 record so the photo links travel with the revision.
@@ -331,13 +424,24 @@ def main() -> None:
         s["createdAt"] = DAY2
         s["updatedAt"] = DAY2
 
-    p1 = write_zip(OUT / "FairRecorder-full-20261023-1800.zip", day1, PLANS, photos, DAY1, "full")
-    p2 = write_zip(OUT / "FairRecorder-daily-20261024-1930.zip",
-                   day2_src + [s1b], PLANS,
-                   {k: v for k, v in photos.items()}, DAY2, "daily")
-    print("wrote", p1)
-    print("wrote", p2)
-    print("suppliers day1=5, day2=3 + 1 revision; photos =", len(photos))
+    p1 = write_zip(OUT / "FairRecorder-canton140-2-full-20261023-1800.zip",
+                   day1, PLANS, photosA, DAY1, "full", FAIR_A_META)
+    p2 = write_zip(OUT / "FairRecorder-canton140-2-daily-20261024-1930.zip",
+                   day2_src + [s1b], PLANS, photosA, DAY2, "daily", FAIR_A_META)
+
+    # ---- 展会 B：上海 KBC，完全独立的一份导出 ----
+    fairB = [copy.deepcopy(s) for s in (S9, S10)]
+    for s in fairB:
+        s["createdAt"] = KBCDAY
+        s["updatedAt"] = KBCDAY
+    photosB = build_photos(fairB)
+    p3 = write_zip(OUT / "FairRecorder-kbc2026-full-20260527-1720.zip",
+                   fairB, PLANS_B, photosB, KBCDAY, "full", FAIR_B_META)
+
+    for p in (p1, p2, p3):
+        print("wrote", p)
+    print(f"fair A: 8 suppliers / {len(photosA)} photos (2 exports); "
+          f"fair B: {len(fairB)} suppliers / {len(photosB)} photos (1 export)")
     print("S7 intentionally has NO photo -> will show up as draft (missing photo)")
 
 

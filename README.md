@@ -2,10 +2,18 @@
 
 一部手机完成展会供应商记录：现场拍照秒存、事后补资料、每晚备份，观展结束一条命令生成英文供应商报告。
 
+**三条设计底线**
+
+| # | 原则 | 具体做法 |
+|---|---|---|
+| 1 | **不绑定某一届展会** | 开场前自选/新建展会；每届展会是独立数据空间（记录、照片、云端目录、报告各自隔离），互不干扰 |
+| 2 | **本地优先，不实时同步** | 所有录入先写手机 IndexedDB；云端只是备份，只在**手动点备份**或**定时器到期**时上传，失败不影响录入 |
+| 3 | **数据只在私有仓库** | 云端目录按展会隔离；上传前强制校验仓库为 **Private**，公开仓库拒绝写入；访问权只给被邀请的 GitHub 账号 |
+
 > **关于公开仓库**
-> 这套工具的代码放在**公开仓库**，因为只有公开仓库才能用免费的 GitHub Pages 部署（Pages 站点本身
-> 没有访问控制，私有仓库也一样）。仓库里**没有任何供应商数据、没有 token、没有公司专属信息**：
-> 公司名与展会抬头放在本地 `config.json`（已 gitignore），供应商数据同步到**另一个私有仓库**。
+> 这套工具的代码放在**公开仓库**，因为免费版 GitHub Pages 只支持公开仓库（Pages 站点本身没有访问控制，
+> 与仓库私有无关）。仓库里**没有任何供应商数据、没有 token、没有公司专属信息**：
+> 收件方放在本地 `config.json`（已 gitignore），供应商数据只进**私有仓库**。
 
 ---
 
@@ -14,29 +22,35 @@
 ```
 FairRecorder/
 ├─ app/                       现场录入 PWA（原生 JS，无构建链）—— Pages 的发布目录
-│  ├─ index.html              单页应用：主屏 / 秒存 / 手动录入 / 补录 / 计划 / 导出 / 云同步
-│  ├─ sync.js                 GitHub 云端备份（Git Data API）
+│  ├─ index.html              单页应用：主屏 / 展会 / 秒存 / 手动录入 / 补录 / 计划 / 导出 / 云备份
+│  ├─ sync.js                 GitHub 云备份（Git Data API + 私有校验 + 自动备份）
 │  ├─ manifest.webmanifest    安装到主屏的元数据
 │  ├─ sw.js                   Service Worker：离线缓存
 │  ├─ vendor/jszip.min.js     JSZip 3.10.1（本地内置，不依赖 CDN）
 │  └─ icons/                  192 / 512 / apple-touch-icon
 ├─ .github/workflows/pages.yml  推送 main 即自动部署 Pages
-├─ inbox/                     手机导出的 ZIP 放这里（gitignore）
+├─ inbox/                     手机导出的 ZIP 放这里（gitignore，可混放多届展会）
 ├─ output/                    汇总产物（自动重建，gitignore）
-│  ├─ Supplier_Master.xlsx        供应商总表（6 个工作表）
-│  ├─ Category_Comparison.xlsx    按品类对比矩阵
-│  ├─ Supplier_Report_EN.docx      英文正式报告（发总部）
-│  ├─ Supplier_Report_EN.html      图文预览版（可浏览器打印成 PDF）
-│  ├─ data/suppliers_merged.json   合并后的规范数据
-│  └─ validation.json              完整性校验与异常清单
+│  ├─ index.json                 展会索引：每届的记录数 / Top 名单 / 报告路径
+│  └─ <展会目录>/               每届展会一套，目录名如 2026-140th-canton-fair-phase-ii
+│     ├─ Supplier_Master.xlsx        供应商总表（6 个工作表）
+│     ├─ Category_Comparison.xlsx    按品类对比矩阵
+│     ├─ Supplier_Report_EN.docx      英文正式报告（发总部）
+│     ├─ Supplier_Report_EN.html      图文预览版（可浏览器打印成 PDF）
+│     ├─ data/suppliers_merged.json   合并后的规范数据
+│     ├─ photos/ thumbnails/         照片与缩略图
+│     └─ validation.json              完整性校验与异常清单
 ├─ scripts/
-│  ├─ build_report.py         汇总全流程（CLI 入口）
-│  ├─ fairlib.py              数据模型、合并、去重、评分
+│  ├─ build_report.py         汇总全流程（CLI 入口，按展会分组）
+│  ├─ fairlib.py              数据模型、合并、去重、评分、展会拆分
+│  ├─ push_via_api.py         走 REST API 推代码（git 协议被网络拦住时用）
 │  ├─ setup_github.py         建仓库 + 推代码 + 开 Pages（一次性）
-│  ├─ make_sample.py          生成演示用样例导出
+│  ├─ make_sample.py          生成演示用样例导出（两届展会）
 │  └─ make_icons.py           生成 PWA 图标
-├─ tests/test_build_report.py 16 项单元测试
-├─ config.example.json        → 复制为 config.json 填展会抬头（gitignore）
+├─ tests/
+│  ├─ test_build_report.py    22 项单元测试（含多展会隔离）
+│  └─ smoke_app.js            真机冒烟：Chromium 跑一遍新建展会→录入→切换→隔离
+├─ config.example.json        → 复制为 config.json 填收件方（gitignore）
 └─ requirements.txt           openpyxl / Pillow / python-docx
 ```
 
@@ -44,8 +58,8 @@ FairRecorder/
 
 ## 二、把应用装到 iPhone（观展前必须完成）
 
-1. Safari 打开 Pages 地址 `https://<owner>.github.io/fairrecorder/` → 分享 → **添加到主屏幕**
-2. 打开主屏图标，**开飞行模式试一次**：拍照 → 存草稿 → 补资料（云同步此时应报网络失败，但本地全部可用）
+1. Safari 打开 Pages 地址 `https://nbleo.github.io/fair_recorder/` → 分享 → **添加到主屏幕**
+2. 打开主屏图标，**开飞行模式试一次**：拍照 → 存草稿 → 补资料（云备份此时应报网络失败，但本地全部可用）
 3. 之后**固定用这个地址**。换域名或换浏览器 = 另一套本地数据库，会看不到已有数据
 
 展期内不要改代码；改了要同步 bump `sw.js` 里的 `CACHE` 版本号。
@@ -55,15 +69,24 @@ FairRecorder/
 ## 三、观展前（T-3 ~ T-1）
 
 - [ ] 装到主屏，飞行模式试录 3 条并重启 App 验证数据还在
+- [ ] **先建好本场展会**：展会页 → 新建 → 填名称（中文 + English）、展期、城市/场馆、展区
 - [ ] 拍一张名片、一张证书，确认清晰度够用
-- [ ] 完整走一遍「云同步上传 → 导出 ZIP → 跑汇总脚本 → 出 DOCX/XLSX」
+- [ ] 完整走一遍「云备份上传 → 导出 ZIP → 跑汇总脚本 → 出 DOCX/XLSX」
 - [ ] 把已知的厂家补进「预拜访清单」（公司名、展位号、目的、优先级 A/B/C）
-- [ ] 复制 `config.example.json` 为 `config.json`，填好展会抬头与收件方
+- [ ] 复制 `config.example.json` 为 `config.json`，填好收件方（`prepared_for`）
 - [ ] 手机清出至少 2 GB 空间，带充电宝
 
 ---
 
 ## 四、现场怎么用
+
+### 0）先选中本场展会（每次换展会都要做）
+
+主屏顶部卡片显示当前展会与展期 → 点 **🎪 切换 / 新建展会** → 选一个或新建一个。
+**所有录入都挂在选中的展会下**，换展会后列表会跟着变（不是筛掉了，是本来就在另一个空间里）。
+
+新建展会时填：名称（中文）、名称 English（进英文报告抬头）、展期、城市/场馆、主要展区、默认展馆。
+展会类型下拉（广交会一期/二期/三期、KBC、ISH…）只预填城市与展区，不限制品类——任何展会都能自建。
 
 ### 1）拍照秒存（约 5 秒）—— 首选
 
@@ -101,14 +124,17 @@ FairRecorder/
 
 ## 五、每晚必做：备份（二选一，建议都做）
 
-### A. 云同步（推荐，自动进私有仓库）
+### A. 云备份（自动进私有仓库，本地优先）
 
-主屏 → **☁️ 云同步** → 填好 owner / repo / branch / path / token → **保存** → **🔌 测试连接** → **⬆️ 上传**。
+主屏 → **☁️ 云备份** → 填好 owner / repo / branch / 云端根目录 / token → **保存** → **🔌 测试连接** → **⬆️ 立即备份**。
 
-- 同步范围可选 **仅元数据**（几秒，弱网也稳）或 **元数据 + 原图**（慢，但云端有图）
-- 展馆信号差时上传会超时——**不要紧，本地数据没丢**，回酒店有 Wi-Fi 再点一次即可
-- token 明文存在手机浏览器本地；建议用 fine-grained token，只对数据仓库授权
-- **⬇️ 从 GitHub 恢复**用于换机或误删：只覆盖云端更新的版本，本地更新的不会被覆盖
+- **不做实时同步**：只在手动点击或定时器到期时上传。展馆弱网也不会拖慢录入
+- **自动备份档位**：关闭 / 每 30 分钟 / 每 2 小时 / 每天（仅 App 打开时生效，默认只传元数据）
+- **备份内容**：仅元数据（几十 KB，弱网稳）或 元数据 + 原图（回酒店有 Wi-Fi 再点）
+- 已上传过的照片会跳过，不会重复传
+- 首页卡片显示「N 条未上传」——这就是本地领先云端的改动数
+- 上传失败只写日志、不弹错误打断录入；**本地永远是第一副本**
+- **⬇️ 从云端恢复**用于换机或误删：只覆盖云端更新的版本，本地较新的不会被覆盖
 
 ### B. 导出 ZIP（离线兜底）
 
@@ -134,8 +160,16 @@ FairRecorder/
 python scripts/make_sample.py && cp sample/*.zip inbox/ && python scripts/build_report.py
 ```
 
+多届展会混放在同一个 `inbox/` 也没关系——脚本按 `fairId` 拆分，每届单独出一套报告：
+
+```bash
+python scripts/build_report.py --list-fairs                 # 先看有哪些展会
+python scripts/build_report.py --fair 2026-kitchen-bath-china   # 只出这一届
+```
+
 ### 合并规则（可重复运行，结果幂等）
 
+- **先按展会分组，再合并**：不同展会的记录不会互相干扰，也不会被误判为重复
 - 同一条记录按 UUID 合并，**`updatedAt` 新的版本赢**
 - 删除过的记录以「墓碑」形式带出，不会在合并时复活
 - 公司名 + 展位号相同、且联系方式一致 → 自动合并；冲突 → 只写进 `validation.json` 候选清单，**绝不静默合并**
@@ -205,19 +239,32 @@ GITHUB_TOKEN=<pat> python scripts/push_via_api.py --message "your commit message
 > ⚠️ Pages 站点是**公开可访问**的（GitHub 的规则，与仓库私有无关）。所以：
 > 代码里不要放任何 token、公司名或供应商数据——它们分别在手机本地和私有仓库。
 
+### 数据访问控制（只给自己，之后可加人）
+
+| 层 | 做法 |
+|---|---|
+| 仓库可见性 | 必须是 **Private**。上传前调 API 校验，公开仓库直接拒绝写入并提示 |
+| token 授权 | fine-grained token，**Repository access 设为 All repositories**，权限只给 `Contents: Read and write`（+ `Pages`） |
+| 云端隔离 | 每届展会一个目录 `fairs/<展会ID>/suppliers.json`，照片在 `fairs/<展会ID>/photos/` |
+| 加人 | 仓库 → **Settings → Collaborators → Add people**，只邀请具体 GitHub 账号；**不要**把仓库改 Public |
+| 兜底 | 公开代码仓里没有任何供应商字段；`config.json`、导出产物、照片都在 gitignore 里 |
+
 ---
 
 ## 八、已知风险与对策
 
 | 风险 | 对策 |
 |---|---|
-| iOS 回收本地数据 | 每晚备份（云同步或导出 ZIP），两份副本 |
+| iOS 回收本地数据 | 每晚备份（云备份或导出 ZIP），两份副本 |
+| 录进了错误的展会 | 主屏顶部常驻当前展会名；发现后到展会页切换即可，数据不会串 |
+| 多届展会混淆 | 记录/照片/云端目录/报告全部按 fairId 隔离；老数据自动归入「迁移自旧版」 |
+| 照片撑爆存储 | 客户端压缩（产品图长边 1600 / 名片证书 2000），设置页显示占用，>70% 预警 |
 | 照片撑爆存储 | 客户端压缩（产品图长边 1600 / 名片证书 2000），设置页显示占用，>70% 预警 |
 | 照片挂错厂家 | 每次新建先拍展位牌；详情页顶部常驻公司名与展位号 |
 | 展位号记错 | 展位号自动大写去空格；首张照片建议拍展位牌 |
 | 同名厂家 / 多展位 | UUID 为主键，公司名+展位为业务键，模糊冲突只报候选 |
 | 电量 | 深色界面、无后台同步、无持续定位，带充电宝 |
-| 云同步失败 / 超时 | 本地始终是第一副本；同步失败不影响录入，换网络重试即可 |
+| 云备份失败 / 超时 | 本地始终是第一副本；失败只记日志，定时器下次自动重试 |
 | token 泄露 | 用 fine-grained token 只授权数据仓库；换手机后到 GitHub 吊销旧 token |
 | 把"供应商声称"当成认证 | 五级证据状态 + Conditional 标签 + 必列待核验证书 |
 

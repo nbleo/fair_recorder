@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FairRecorder">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>FairRecorder 展会速记</title>
 <style>
@@ -75,6 +76,7 @@ input[type=date]{min-height:var(--tap)}
 .item .body{flex:1;min-width:0}
 .item .nm{font-weight:700;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item .meta{font-size:13px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
 .badge{display:inline-block;font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px;margin-right:6px}
 .b-draft{background:#3a1620;color:#ffb3c0}
 .b-complete{background:#0f3328;color:#7ff2d0}
@@ -147,8 +149,51 @@ input[type=date]{min-height:var(--tap)}
 
 <main class="wrap">
 
+<!-- ============ FAIRS（展会列表 / 切换） ============ -->
+<section id="scr-fairs" class="hide">
+  <div class="banner banner-info">
+    <div>每届展会是<b>独立的数据空间</b>：记录、照片、云备份路径、生成的报告全部隔离，
+      互不干扰。观展前先在这里选中当届展会。</div>
+  </div>
+  <button class="btn btn-accent" id="btnFairNew" style="margin-bottom:14px">＋ 新建展会</button>
+  <div id="fairBody"></div>
+</section>
+
+<!-- ============ 新建 / 编辑展会 ============ -->
+<section id="scr-fairNew" class="hide">
+  <div class="field"><label>展会类型（只预填城市与展区，可改）</label>
+    <select id="fPreset"></select>
+  </div>
+  <div class="field"><label class="req">展会名称（中文）</label>
+    <input id="fName" type="text" placeholder="例如 第140届广交会 第二期"></div>
+  <div class="field"><label>展会名称（English，报告抬头用）</label>
+    <input id="fNameEn" type="text" placeholder="例如 140th Canton Fair — Phase II" autocapitalize="off"></div>
+  <div class="field"><label>届次 / 阶段</label>
+    <input id="fPhase" type="text" placeholder="例如 Phase II · Bathroom Equipment"></div>
+  <div class="btn-row">
+    <div class="field" style="flex:1"><label>开始日期</label><input id="fStart" type="date"></div>
+    <div class="field" style="flex:1"><label>结束日期</label><input id="fEnd" type="date"></div>
+  </div>
+  <div class="btn-row">
+    <div class="field" style="flex:1"><label>城市</label><input id="fCity" type="text"></div>
+    <div class="field" style="flex:1"><label>场馆</label><input id="fVenue" type="text"></div>
+  </div>
+  <div class="field"><label>主要展区</label><input id="fArea" type="text" placeholder="例如 卫浴设备 / 建筑装饰材料"></div>
+  <div class="field"><label>默认展馆</label><select id="fHall"></select></div>
+  <div class="field"><label>备注</label><textarea id="fNote" placeholder="例如 重点看淋浴房整体与钢化玻璃"></textarea></div>
+  <div class="btn-row" style="margin-top:14px">
+    <button class="btn" id="fCancel">取消</button>
+    <button class="btn btn-accent" id="fSave">保存并使用</button>
+  </div>
+  <div id="fAdvanced" class="hide" style="margin-top:18px">
+    <div class="sec">危险操作</div>
+    <button class="btn btn-danger" id="fArchive">归档此展会（不再显示在主列表）</button>
+  </div>
+</section>
+
 <!-- ============ HOME ============ -->
 <section id="scr-home">
+  <div id="homeFair"></div>
   <div id="homeBanners"></div>
   <div class="stats">
     <div class="stat"><b id="stTotal">0</b><span>厂家</span></div>
@@ -237,28 +282,63 @@ input[type=date]{min-height:var(--tap)}
   <div id="exResult" class="card hide"></div>
 </section>
 
-<!-- ============ SYNC ============ -->
+<!-- ============ SYNC（云备份） ============ -->
 <section id="scr-sync" class="hide">
   <div class="banner banner-info">
-    <div>☁️ 云同步只是<b>备份与恢复通道</b>。手机本地 IndexedDB 永远是第一副本，
-      离线时照样能录；有网时再同步。仓库设为 <b>Private</b>，只有您的 GitHub 账号能读。</div>
+    <div>🔒 <b>本地优先</b>：手机上每条记录先写本机 IndexedDB，云端只是备份。
+      不做实时同步——只在您点「立即备份」或<b>定时器到期</b>时才上传，展馆弱网也不会拖慢录入。</div>
   </div>
 
+  <div class="card">
+    <div class="kv"><span class="k">本展会</span><span class="v" id="syFair">-</span></div>
+    <div class="kv"><span class="k">仓库可见性</span><span class="v" id="syVis">未配置</span></div>
+    <div class="kv"><span class="k">本地记录 / 照片</span><span class="v" id="syLocal">-</span></div>
+    <div class="kv"><span class="k">未上传改动</span><span class="v" id="syPending">-</span></div>
+    <div class="kv"><span class="k">上次备份</span><span class="v" id="syLast">从未</span></div>
+    <div class="kv"><span class="k">云端本展会</span><span class="v" id="syRemote">-</span></div>
+  </div>
+
+  <div class="sec">备份策略</div>
+  <div class="card">
+    <div class="field"><label>自动备份（仅在 App 打开时生效，需联网）</label>
+      <div class="chips" id="syAuto">
+        <button class="chip" data-v="off" aria-pressed="true">关闭</button>
+        <button class="chip" data-v="m30" aria-pressed="false">每 30 分钟</button>
+        <button class="chip" data-v="h2" aria-pressed="false">每 2 小时</button>
+        <button class="chip" data-v="daily" aria-pressed="false">每天</button>
+      </div>
+      <div class="tiny muted" style="margin-top:6px">自动备份默认只传元数据（几十 KB）；照片建议回酒店有 Wi-Fi 时手动全量备份。</div>
+    </div>
+    <div class="field"><label>自动备份内容</label>
+      <div class="chips" id="syAutoScope">
+        <button class="chip" data-v="meta" aria-pressed="true">仅元数据</button>
+        <button class="chip" data-v="full" aria-pressed="false">元数据 + 原图</button>
+      </div>
+    </div>
+    <div class="field"><label>手动备份内容</label>
+      <div class="chips" id="syScope">
+        <button class="chip" data-v="meta" aria-pressed="true">仅元数据（快）</button>
+        <button class="chip" data-v="full" aria-pressed="false">元数据 + 原图</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="syPush" style="margin-bottom:12px">⬆️ 立即备份</button>
+  <button class="btn" id="syPushFull" style="margin-bottom:12px">🖼️ 立即全量备份（含原图）</button>
+  <button class="btn" id="syPull" style="margin-bottom:12px">⬇️ 从云端恢复本展会</button>
+
+  <div class="sec">仓库与访问控制</div>
   <div class="card">
     <div class="field"><label>仓库拥有者 (owner)</label><input id="syOwner" type="text" placeholder="例如 nbleo" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <div class="field"><label>仓库名 (repo)</label><input id="syRepo" type="text" placeholder="例如 fairrecorder-data" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <div class="field"><label>分支</label><input id="syBranch" type="text" value="main" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
-    <div class="field"><label>数据文件路径</label><input id="syPath" type="text" value="data/suppliers.json" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+    <div class="field"><label>云端根目录</label><input id="syRoot" type="text" value="fairs" autocapitalize="none" autocorrect="off" spellcheck="false">
+      <div class="tiny muted" style="margin-top:6px">每届展会单独一个目录：fairs/&lt;展会ID&gt;/suppliers.json</div>
+    </div>
     <div class="field"><label>Personal Access Token</label>
       <input id="syToken" type="password" placeholder="github_pat_… / ghp_…" autocapitalize="none" autocorrect="off" spellcheck="false">
       <div class="tiny muted" style="margin-top:6px">
-        token 明文存在本机浏览器里。建议用 fine-grained token，只对这一个数据仓库授权。
-      </div>
-    </div>
-    <div class="field"><label>同步范围</label>
-      <div class="chips" id="syScope">
-        <button class="chip" data-v="meta" aria-pressed="false">仅元数据（快）</button>
-        <button class="chip" data-v="full" aria-pressed="true">元数据 + 原图</button>
+        token 明文存在本机浏览器里，用 fine-grained token 并只授权这一个私有仓库。
       </div>
     </div>
     <div class="btn-row">
@@ -267,22 +347,27 @@ input[type=date]{min-height:var(--tap)}
     </div>
   </div>
 
-  <div class="card">
-    <div class="kv"><span class="k">上次同步</span><span class="v" id="syLast">从未</span></div>
-    <div class="kv"><span class="k">本地记录 / 照片</span><span class="v" id="syLocal">-</span></div>
-    <div class="kv"><span class="k">云端记录</span><span class="v" id="syRemote">-</span></div>
+  <div class="banner banner-warn">
+    <div>⚠️ <b>仓库必须是 Private</b>。上传前会校验，公开仓库一律拒绝写入。
+      要给别人看：GitHub 仓库页 → <b>Settings → Collaborators → Add people</b>，
+      只邀请具体账号；不要把仓库改成 Public。</div>
   </div>
 
-  <button class="btn btn-primary" id="syPush" style="margin-bottom:12px">⬆️ 上传到 GitHub（备份）</button>
-  <button class="btn" id="syPushMeta" style="margin-bottom:12px">⬆️ 仅上传元数据（弱网时用）</button>
-  <button class="btn" id="syPull">⬇️ 从 GitHub 恢复到本机</button>
-
-  <div class="sec">同步日志</div>
+  <div class="sec">备份日志</div>
   <div id="syLog" class="card tiny muted" style="max-height:220px;overflow:auto">尚无操作</div>
 </section>
 
 <!-- ============ SETTINGS ============ -->
 <section id="scr-settings" class="hide">
+  <div class="sec">当前展会</div>
+  <div class="card">
+    <div class="kv"><span class="k">展会</span><span class="v" id="setFairName">-</span></div>
+    <div class="kv"><span class="k">展期</span><span class="v" id="setFairDates">-</span></div>
+    <div style="margin-top:10px" class="btn-row">
+      <button class="btn" onclick="go('fairs')">🎪 切换展会</button>
+      <button class="btn" onclick="editCurrentFair()">✏️ 编辑本展会</button>
+    </div>
+  </div>
   <div class="sec">展会默认值</div>
   <div class="field"><label>默认展馆</label><select id="setHall"></select></div>
   <div class="sec">评分权重（合计须为 100%）</div>
@@ -309,8 +394,19 @@ input[type=date]{min-height:var(--tap)}
 <script>
 "use strict";
 /* ============================ 常量 ============================ */
-const SCHEMA_VERSION = 1;
-const APP_VERSION = "1.0.0";
+const SCHEMA_VERSION = 2;
+const APP_VERSION = "1.1.0";
+
+/* 展会预设：只预填城市/场馆/展区，不限制品类，任何展会都能自建 */
+const FAIR_PRESETS = [
+  {k:"canton-1", label:"广交会 第一期", city:"广州", venue:"广交会展馆", area:"五金 / 工具 / 建材"},
+  {k:"canton-2", label:"广交会 第二期", city:"广州", venue:"广交会展馆", area:"卫浴设备 / 建筑装饰材料"},
+  {k:"canton-3", label:"广交会 第三期", city:"广州", venue:"广交会展馆", area:"家居 / 日用消费品"},
+  {k:"kbc",      label:"上海 KBC 厨卫展", city:"上海", venue:"上海新国际博览中心", area:"厨房 / 卫浴"},
+  {k:"ish",      label:"德国 ISH 法兰克福", city:"Frankfurt", venue:"Messe Frankfurt", area:"Sanitary / Heating / AC"},
+  {k:"buildmat", label:"建博会 / 建材展", city:"广州", venue:"广交会展馆", area:"建筑装饰材料"},
+  {k:"other",    label:"其他（手动填写）", city:"", venue:"", area:""}
+];
 
 const HALLS = ["A区","B区","C区","D区","未定"];
 const AREAS = ["卫浴设备","建筑装饰材料","家居用品","玻璃工艺品","餐厨用具","家具","进口展","其他"];
@@ -424,8 +520,10 @@ function labelOf(opts, val){
   return val;
 }
 
-/* ============================ 数据库 ============================ */
-const DBN="fair-recorder", DBV=1;
+/* ============================ 数据库 ============================
+   一次展会 = 一个 fair 记录；供应商 / 计划 / 照片都挂在 fairId 下。
+   这样多届展会可以在同一台手机里并存，互不可见，报告和云备份也各自独立。 */
+const DBN="fair-recorder", DBV=2;
 let _db=null;
 function db(){
   if(_db) return Promise.resolve(_db);
@@ -433,22 +531,33 @@ function db(){
     const r=indexedDB.open(DBN,DBV);
     r.onupgradeneeded=(e)=>{
       const d=e.target.result;
+      const vtx=e.target.transaction;          // 升级事务：所有建表/建索引都挂在它上面
+      let s,p,v;
       if(!d.objectStoreNames.contains("suppliers")){
-        const s=d.createObjectStore("suppliers",{keyPath:"id"});
-        s.createIndex("updatedAt","updatedAt"); s.createIndex("companyKey","companyKey");
-        s.createIndex("boothKey","boothKey"); s.createIndex("source","source");
-      }
+        s=d.createObjectStore("suppliers",{keyPath:"id"});
+      } else s=vtx.objectStore("suppliers");
       if(!d.objectStoreNames.contains("photos")){
-        const p=d.createObjectStore("photos",{keyPath:"id"});
-        p.createIndex("supplierId","supplierId"); p.createIndex("sha256","sha256");
-      }
+        p=d.createObjectStore("photos",{keyPath:"id"});
+      } else p=vtx.objectStore("photos");
       if(!d.objectStoreNames.contains("visitPlans")){
-        const v=d.createObjectStore("visitPlans",{keyPath:"id"});
-        v.createIndex("status","status"); v.createIndex("priority","priority");
-      }
+        v=d.createObjectStore("visitPlans",{keyPath:"id"});
+      } else v=vtx.objectStore("visitPlans");
       if(!d.objectStoreNames.contains("settings")) d.createObjectStore("settings",{keyPath:"key"});
+      if(!d.objectStoreNames.contains("fairs")){
+        d.createObjectStore("fairs",{keyPath:"id"});
+      }
+      if(!s.indexNames.contains("updatedAt")) s.createIndex("updatedAt","updatedAt");
+      if(!s.indexNames.contains("companyKey")) s.createIndex("companyKey","companyKey");
+      if(!s.indexNames.contains("boothKey")) s.createIndex("boothKey","boothKey");
+      if(!s.indexNames.contains("source")) s.createIndex("source","source");
+      if(!p.indexNames.contains("supplierId")) p.createIndex("supplierId","supplierId");
+      if(!p.indexNames.contains("sha256")) p.createIndex("sha256","sha256");
+      if(!v.indexNames.contains("status")) v.createIndex("status","status");
+      if(!v.indexNames.contains("priority")) v.createIndex("priority","priority");
+      for(const st of [s,p,v]) if(!st.indexNames.contains("fairId")) st.createIndex("fairId","fairId");
     };
-    r.onsuccess=()=>{_db=r.target.result; res(_db)};
+    // 注意：是 r.result，不是 r.target.result —— IDBRequest 上没有 .target
+    r.onsuccess=()=>{_db=r.result; res(_db)};
     r.onerror=()=>rej(r.error);
   });
 }
@@ -478,10 +587,54 @@ async function getKV(k,def){
   const r=await get("settings",k); return r?r.value:def;
 }
 
+/* ============================ 展会模型 ============================ */
+function slugify(s){
+  const t=String(s||"").trim().toLowerCase()
+    .replace(/[\s\/\\|]+/g,"-").replace(/[^\w\u4e00-\u9fa5-]/g,"");
+  return t || "fair";
+}
+function fairSlug(f){
+  const base = slugify(f.nameEn || f.name);
+  const y = (f.startDate||"").slice(0,4) || (f.year||"");
+  return y ? `${y}-${base}` : base;
+}
+function newFair(extra){
+  const f={
+    id:uid(), name:"", nameEn:"", city:"", venue:"", area:"",
+    phase:"", startDate:"", endDate:"", defaultHall:"A区",
+    notes:"", archived:false,
+    lastPushAt:null,            // 该展会最近一次成功上传的时间
+    createdAt:now(), updatedAt:now(), deletedAt:null
+  };
+  Object.assign(f, extra||{});
+  return f;
+}
+function touchFair(f){ f.updatedAt=now(); return f; }
+function fairDateLabel(f){
+  if(!f) return "";
+  if(f.startDate && f.endDate) return f.startDate.slice(5).replace("-","/")+"–"+f.endDate.slice(5).replace("-","/");
+  if(f.startDate) return f.startDate;
+  return "";
+}
+/* 老数据（v1）没有 fairId：统一归到一个"迁移自旧版"的展会下，避免数据消失 */
+async function migrateLegacyFair(){
+  const fairs=await all("fairs");
+  if(fairs.length) return;
+  const [s,p,ph]=await Promise.all([all("suppliers"), all("visitPlans"), all("photos")]);
+  if(!s.length && !p.length && !ph.length) return;
+  const f=newFair({name:"迁移自旧版（未归类）", nameEn:"Migrated (unfiled)",
+                   notes:"由 v1 数据自动迁移，可在展会列表里改名或归档"});
+  await put("fairs", f);
+  for(const x of s){ if(!x.fairId){ x.fairId=f.id; await put("suppliers", x); } }
+  for(const x of p){ if(!x.fairId){ x.fairId=f.id; await put("visitPlans", x); } }
+  for(const x of ph){ if(!x.fairId){ x.fairId=f.id; await put("photos", x); } }
+  await setKV("currentFairId", f.id);
+}
+
 /* ============================ 记录模型 ============================ */
 function newSupplier(extra){
   const s={
-    id:uid(), source:"walk_in", previsitId:null,
+    id:uid(), fairId: FAIR?FAIR.id:null, source:"walk_in", previsitId:null,
     companyNameZh:"", companyNameEn:"", hall:"", area:"", boothNo:"",
     contactName:"", contactTitle:"", phone:"", wechat:"", email:"", website:"",
     categories:[], productDetails:"", models:"",
@@ -543,7 +696,7 @@ async function compress(file, maxSide, quality){
 async function addPhoto(supplierId, file, type){
   const big = (type==="namecard"||type==="certificate") ? await compress(file,2000,0.82) : await compress(file,1600,0.78);
   const thumb = await compress(file,320,0.7);
-  const p={ id:uid(), supplierId, type:type||"product", blob:big, thumbBlob:thumb,
+  const p={ id:uid(), fairId:curFairId(), supplierId, type:type||"product", blob:big, thumbBlob:thumb,
     w:0,h:0,size:big.size, sha256:await sha256Hex(big), createdAt:now() };
   await put("photos", p);
   const s=await get("suppliers", supplierId);
@@ -553,7 +706,8 @@ async function addPhoto(supplierId, file, type){
 
 /* ============================ 全局状态 ============================ */
 let SETTINGS={weights:Object.assign({},DEFAULT_WEIGHTS), defaultHall:"A区", deviceId:null, lastExportAt:null};
-let SUPPLIERS=[], PLANS=[], PHOTOS=[];
+let SUPPLIERS=[], PLANS=[], PHOTOS=[], FAIRS=[];
+let FAIR=null;              // 当前展会（null = 未选择）
 let CUR=null;              // 正在编辑的 supplier id
 let LIST_FILTER="all";
 let PENDING_PLAN=null;     // 预拜访转记录时的上下文
@@ -567,23 +721,54 @@ async function loadSettings(){
   SETTINGS.deviceId = await getKV("deviceId", null);
   if(!SETTINGS.deviceId){ SETTINGS.deviceId=uid(); await setKV("deviceId", SETTINGS.deviceId); }
 }
+function curFairId(){ return FAIR ? FAIR.id : null; }
 async function refresh(){
-  const [s,p,ph]=await Promise.all([all("suppliers"), all("visitPlans"), all("photos")]);
-  SUPPLIERS=s.filter(x=>!x.deletedAt);
-  PLANS=p.filter(x=>!x.deletedAt);
-  PHOTOS=ph;
+  const [s,p,ph,fs]=await Promise.all([all("suppliers"), all("visitPlans"), all("photos"), all("fairs")]);
+  FAIRS=fs.filter(f=>!f.deletedAt)
+          .sort((a,b)=>((b.startDate||"")<(a.startDate||"")?-1:(b.startDate||a.startDate?1:0)));
+  FAIRS.sort((a,b)=>{
+    if(!!a.archived !== !!b.archived) return a.archived?1:-1;
+    return (b.startDate||b.createdAt||"")<(a.startDate||a.createdAt||"")?-1:1;
+  });
+  if(FAIR && !FAIRS.some(f=>f.id===FAIR.id)) FAIR=null;
+  const fid=curFairId();
+  const inFair = (x)=>!fid || x.fairId===fid || (!x.fairId && !fid);
+  SUPPLIERS=s.filter(x=>!x.deletedAt && inFair(x));
+  PLANS=p.filter(x=>!x.deletedAt && inFair(x));
+  PHOTOS=ph.filter(inFair);
+}
+/* 切换当前展会 */
+async function selectFair(id){
+  let f=FAIRS.find(x=>x.id===id);
+  if(!f) f=await get("fairs", id);     // 刚新建的展会还没进 FAIRS 缓存
+  if(!f) return;
+  FAIR=f;
+  await setKV("currentFairId", f.id);
+  await refresh();
+}
+/* 未上传到云端的改动条数（本地优先：只在用户触发或定时器到期时才上传） */
+function pendingChanges(){
+  const since = FAIR && FAIR.lastPushAt ? FAIR.lastPushAt : null;
+  if(!since) return SUPPLIERS.length + PLANS.length + PHOTOS.length;
+  let n=0;
+  for(const x of SUPPLIERS) if((x.updatedAt||"")>since) n++;
+  for(const x of PLANS) if((x.updatedAt||"")>since) n++;
+  for(const x of PHOTOS) if((x.createdAt||"")>since) n++;
+  return n;
 }
 const liveSuppliers = ()=>SUPPLIERS;
 function photosOf(id){ return PHOTOS.filter(p=>p.supplierId===id).sort((a,b)=>a.createdAt<b.createdAt?-1:1); }
 
 /* ============================ 路由 ============================ */
 const SCREENS={
-  home:{title:"FairRecorder", sub:"第140届广交会 · 第二期 · 10/23–25", back:false, fn:renderHome},
+  home:{title:"FairRecorder", sub:"", back:false, fn:renderHome},
+  fairs:{title:"展会", sub:"切换或新建展会，数据互不干扰", back:true, fn:renderFairs},
+  fairNew:{title:"新建展会", back:true, fn:renderFairNew},
   list:{title:"全部记录", back:true, fn:renderList},
   edit:{title:"供应商详情", back:true, fn:null},
   plans:{title:"预拜访清单", back:true, fn:renderPlans},
   export:{title:"导出与恢复", back:true, fn:renderExport},
-  sync:{title:"云同步", back:true, fn:()=>{ if(window.renderSync) window.renderSync(); }},
+  sync:{title:"云备份", back:true, fn:()=>{ if(window.renderSync) window.renderSync(); }},
   settings:{title:"设置", back:true, fn:renderSettings}
 };
 let STACK=["home"];
@@ -603,6 +788,7 @@ $("#btnBack").onclick=()=>{ STACK.pop(); go(STACK[STACK.length-1]||"home"); };
 /* ============================ 首页 ============================ */
 async function renderHome(){
   await refresh();
+  renderFairCard();
   const drafts=SUPPLIERS.filter(s=>stateOf(s)==="draft").length;
   const rated=SUPPLIERS.filter(s=>stateOf(s)==="rated").length;
   $("#stTotal").textContent=SUPPLIERS.length;
@@ -619,6 +805,32 @@ async function renderHome(){
     h += `<div class="banner banner-info"><div>📝 有 <b>${drafts}</b> 条草稿待补资料（缺公司名/联系人/品类/照片等）</div></div>`;
   }
   $("#homeBanners").innerHTML=h;
+  $("#topSub").textContent = FAIR ? [FAIR.name||FAIR.nameEn, fairDateLabel(FAIR)].filter(Boolean).join(" · ") : "未选择展会";
+}
+function renderFairCard(){
+  const el=$("#homeFair");
+  if(!el) return;
+  if(!FAIR){
+    el.innerHTML=`<div class="banner banner-warn"><div>尚未选择展会。
+      <button class="btn btn-accent" style="margin-top:10px" onclick="go('fairs')">去选择 / 新建展会</button></div></div>`;
+    return;
+  }
+  const pend=pendingChanges();
+  let backupTxt;
+  if(FAIR.lastPushAt){
+    backupTxt = new Date(FAIR.lastPushAt).toLocaleString("zh-CN") + (pend ? `（${pend} 条未上传）` : "（已同步）");
+  }else{
+    backupTxt = pend ? `未备份（${pend} 条待上传）` : "未备份";
+  }
+  const dateTxt = [FAIR.startDate||"—", (FAIR.endDate && FAIR.endDate!==FAIR.startDate)?FAIR.endDate:""].filter(Boolean).join(" → ");
+  el.innerHTML=`<div class="card">
+    <div class="kv"><span class="k">当前展会</span><span class="v">${esc(FAIR.name||FAIR.nameEn||"（未命名）")}</span></div>
+    ${FAIR.phase?`<div class="kv"><span class="k">届次 / 阶段</span><span class="v">${esc(FAIR.phase)}</span></div>`:""}
+    <div class="kv"><span class="k">展期</span><span class="v">${esc(dateTxt)}</span></div>
+    ${FAIR.city?`<div class="kv"><span class="k">城市 / 场馆</span><span class="v">${esc([FAIR.city,FAIR.venue].filter(Boolean).join(" · "))}</span></div>`:""}
+    <div class="kv"><span class="k">云端备份</span><span class="v">${esc(backupTxt)}</span></div>
+    <div style="margin-top:10px"><button class="btn" onclick="go('fairs')">🎪 切换 / 新建展会</button></div>
+  </div>`;
 }
 $("#btnQuick").onclick=()=>{ CUR=null; PENDING_PLAN=null; quickCapture(); };
 $("#btnManual").onclick=()=>addManualSupplier();
@@ -628,9 +840,13 @@ $("#btnExport").onclick=()=>go("export");
 $("#btnSync").onclick=()=>go("sync");
 $("#btnSettings").onclick=()=>go("settings");
 
+function fairHall(){ return (FAIR && FAIR.defaultHall) || SETTINGS.defaultHall || "A区"; }
+function fairArea(){ return (FAIR && FAIR.area) || "卫浴设备"; }
+
 /* 手动输入厂家：先建一条空记录直接进编辑页，照片可稍后从相册补 */
 async function addManualSupplier(){
-  const s=newSupplier({hall:SETTINGS.defaultHall, area:"卫浴设备", source:"manual"});
+  if(!FAIR){ toast("请先选择或新建展会", 3000); go("fairs"); return; }
+  const s=newSupplier({hall:fairHall(), area:fairArea(), source:"manual"});
   await put("suppliers", s);
   await refresh(); CUR=s.id;
   go("edit",{title:"手动输入厂家", sub:"先填公司名，其它可后补；照片在页面底部从相册添加", back:true});
@@ -650,8 +866,9 @@ function pickPhoto(cb, multiple){
   inp.click();
 }
 async function quickCapture(){
+  if(!FAIR){ toast("请先选择或新建展会", 3000); go("fairs"); return; }
   pickPhoto(async (files)=>{
-    const s=newSupplier({hall:SETTINGS.defaultHall, area:"卫浴设备"});
+    const s=newSupplier({hall:fairHall(), area:fairArea()});
     await put("suppliers", s);
     try{
       await addPhoto(s.id, files[0], "booth");
@@ -669,6 +886,104 @@ async function quickFill(id){
   const s=SUPPLIERS.find(x=>x.id===id); if(!s) return;
   go("edit",{title:"刚拍的厂家", sub:"先填最关键的两项，其余晚上补", back:true});
   renderEdit(id);
+}
+
+/* ============================ 展会列表 ============================ */
+async function renderFairs(){
+  await refresh();
+  const counts=new Map();
+  const [allS, allP, allPh]=await Promise.all([all("suppliers"), all("visitPlans"), all("photos")]);
+  for(const x of allS){ if(x.deletedAt) continue; counts.set(x.fairId, (counts.get(x.fairId)||0)+1); }
+  const photosByFair=new Map();
+  for(const x of allPh){ photosByFair.set(x.fairId, (photosByFair.get(x.fairId)||0)+1); }
+  const plansByFair=new Map();
+  for(const x of allP){ if(x.deletedAt) continue; plansByFair.set(x.fairId, (plansByFair.get(x.fairId)||0)+1); }
+
+  const rows=(archived)=>FAIRS.filter(f=>!!f.archived===archived).map(f=>{
+    const n=counts.get(f.id)||0, ph=photosByFair.get(f.id)||0, pl=plansByFair.get(f.id)||0;
+    const cur = FAIR && f.id===FAIR.id;
+    return `<div class="item ${cur?"on":""}" data-f="${f.id}">
+      <div class="body">
+        <div class="nm">${esc(f.name||f.nameEn||"（未命名）")} ${cur?`<span class="badge b-complete">当前</span>`:""}${f.archived?`<span class="badge b-draft">已归档</span>`:""}</div>
+        <div class="meta">${esc([fairDateLabel(f), f.city, f.phase].filter(Boolean).join(" · "))}</div>
+        <div class="meta">${n} 家 · ${pl} 条计划 · ${ph} 张照片${f.lastPushAt?" · 已备份":""}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  const main = rows(false) || `<div class="empty">还没有展会<br><span class="tiny">点上方「新建展会」建一个，例如「第140届广交会 第二期」</span></div>`;
+  const arch = rows(true);
+  $("#fairBody").innerHTML =
+    `<div class="sec">进行中</div>${main}` +
+    (arch?`<div class="sec">已归档</div>${arch}`:"");
+
+  $$("#fairBody .item").forEach(el=>{
+    el.onclick=()=>{ openFair(el.dataset.f); };
+  });
+}
+async function openFair(id){
+  const f=FAIRS.find(x=>x.id===id);
+  if(!f) return;
+  const n=(await all("suppliers")).filter(s=>!s.deletedAt && s.fairId===id).length;
+  if(n===0 && !confirm("「"+(f.name||f.nameEn)+"」下还没有记录，要切换到它吗？")) return;
+  await selectFair(id);
+  toast("已切换到 "+(f.name||f.nameEn));
+  go("home");
+}
+$("#btnFairNew").onclick=()=>{ EDIT_FAIR=null; go("fairNew"); renderFairNew(); };
+function editCurrentFair(){
+  if(!FAIR){ go("fairs"); return; }
+  EDIT_FAIR=FAIR; go("fairNew"); renderFairNew();
+}
+$("#fCancel").onclick=()=>go("fairs");
+$("#fArchive").onclick=async()=>{
+  if(!EDIT_FAIR) return;
+  if(!confirm("归档后该展会不在主列表显示，数据不会删除。确认？")) return;
+  EDIT_FAIR.archived=true;
+  await put("fairs", touchFair(EDIT_FAIR));
+  if(FAIR && FAIR.id===EDIT_FAIR.id){ FAIR=null; await setKV("currentFairId", null); }
+  await refresh(); toast("已归档"); go("fairs");
+};
+let EDIT_FAIR=null;
+function renderFairNew(){
+  const f=EDIT_FAIR;
+  $("#fPreset").innerHTML=FAIR_PRESETS.map(p=>`<option value="${esc(p.k)}">${esc(p.label)}</option>`).join("");
+  $("#fHall").innerHTML=HALLS.map(h=>`<option value="${esc(h)}">${esc(h)}</option>`).join("");
+  $("#fPreset").onchange=()=>{
+    const p=FAIR_PRESETS.find(x=>x.k===$("#fPreset").value);
+    if(!p || p.k==="other") return;
+    if(!$("#fCity").value) $("#fCity").value=p.city;
+    if(!$("#fVenue").value) $("#fVenue").value=p.venue;
+    if(!$("#fArea").value) $("#fArea").value=p.area;
+    if(!$("#fName").value) $("#fName").value=p.label;
+  };
+  if(f){
+    $("#fName").value=f.name||""; $("#fNameEn").value=f.nameEn||""; $("#fPhase").value=f.phase||"";
+    $("#fStart").value=f.startDate||""; $("#fEnd").value=f.endDate||"";
+    $("#fCity").value=f.city||""; $("#fVenue").value=f.venue||""; $("#fArea").value=f.area||"";
+    $("#fHall").value=f.defaultHall||"A区"; $("#fNote").value=f.notes||"";
+    $("#fAdvanced").classList.remove("hide");
+  }else{
+    ["#fName","#fNameEn","#fPhase","#fStart","#fEnd","#fCity","#fVenue","#fArea","#fNote"]
+      .forEach(s=>{ $(s).value=""; });
+    $("#fHall").value="A区";
+    $("#fAdvanced").classList.add("hide");
+    $("#fPreset").onchange();
+  }
+  $("#fSave").onclick=async()=>{
+    const name=$("#fName").value.trim();
+    if(!name){ toast("展会名称必填"); return; }
+    const data={ name, nameEn:$("#fNameEn").value.trim(), phase:$("#fPhase").value.trim(),
+      startDate:$("#fStart").value, endDate:$("#fEnd").value, city:$("#fCity").value.trim(),
+      venue:$("#fVenue").value.trim(), area:$("#fArea").value.trim(),
+      defaultHall:$("#fHall").value, notes:$("#fNote").value.trim() };
+    let f2;
+    if(EDIT_FAIR){ f2=Object.assign(EDIT_FAIR, data); await put("fairs", touchFair(f2)); }
+    else { f2=newFair(data); await put("fairs", f2); }
+    await selectFair(f2.id);
+    toast("已保存并切换到 "+name, 3000);
+    go("home");
+  };
 }
 
 /* ============================ 列表 ============================ */
@@ -905,7 +1220,7 @@ async function renderPlans(){
   $("#pfSave").onclick=async()=>{
     const name=$("#pfName").value.trim();
     if(!name){ toast("公司名必填"); return; }
-    const p={ id:uid(), companyName:name, boothNo:normBooth($("#pfBooth").value), goal:$("#pfGoal").value.trim(),
+    const p={ id:uid(), fairId:curFairId(), companyName:name, boothNo:normBooth($("#pfBooth").value), goal:$("#pfGoal").value.trim(),
       priority:sel, note:$("#pfNote").value.trim(), status:"planned", supplierId:null,
       companyKey:normCompany(name), createdAt:now(), updatedAt:now(), deletedAt:null };
     await put("visitPlans", p); await refresh();
@@ -946,7 +1261,7 @@ async function planAction(pid, act){
   PENDING_PLAN=p;
   pickPhoto(async(files)=>{
     const s=newSupplier({ source:"planned", previsitId:p.id, companyNameZh:p.companyName,
-      boothNo:p.boothNo, hall:SETTINGS.defaultHall, area:"卫浴设备" });
+      boothNo:p.boothNo, hall:fairHall(), area:fairArea() });
     if(p.goal) s.notes="拜访目的："+p.goal;
     await put("suppliers", s);
     try{ await addPhoto(s.id, files[0], "booth"); }catch(e){ toast("照片保存失败："+e.message,4000); }
@@ -964,7 +1279,7 @@ async function renderExport(){
   await refresh();
   $("#exLast").textContent = SETTINGS.lastExportAt ? new Date(SETTINGS.lastExportAt).toLocaleString("zh-CN") : "从未";
   const today=new Date(); today.setHours(0,0,0,0);
-  $("#exCount").textContent = SUPPLIERS.length + " 条 / " + PHOTOS.length + " 张照片";
+  $("#exCount").textContent = (FAIR?(FAIR.name||FAIR.nameEn)+"：":"") + SUPPLIERS.length + " 条 / " + PHOTOS.length + " 张照片";
   try{
     const est=await navigator.storage.estimate();
     if(est && est.quota){
@@ -987,12 +1302,17 @@ async function buildBundle(mode){
   const tombs = await all("suppliers").then(a=>a.filter(s=>s.deletedAt && (mode!=="today" || new Date(s.deletedAt)>=cutoff)));
   const ids = new Set(sup.map(s=>s.id));
   const photos = PHOTOS.filter(p=>ids.has(p.supplierId));
+  const f=FAIR || newFair({name:"（未命名展会）"});
   const bundle={
     schemaVersion:SCHEMA_VERSION,
     export:{ id:uid(), deviceId:SETTINGS.deviceId, createdAt:now(), mode,
       appVersion:APP_VERSION, counts:{suppliers:sup.length, photos:photos.length, plans:PLANS.length, tombstones:tombs.length},
-      weights:SETTINGS.weights,
-      event:{name:"140th Canton Fair", phase:"Phase II", dates:"2026-10-23..2026-10-25"} },
+      weights:SETTINGS.weights },
+    fair: { id:f.id, name:f.name, nameEn:f.nameEn, phase:f.phase, city:f.city, venue:f.venue,
+            area:f.area, startDate:f.startDate, endDate:f.endDate, slug:fairSlug(f) },
+    event:{ name:f.nameEn || f.name, phase:f.phase||"",
+      dates:[f.startDate, f.endDate].filter(Boolean).join("..") || "",
+      venue:[f.city, f.venue].filter(Boolean).join(" · ") },
     suppliers: sup.concat(tombs),
     visitPlans: PLANS.slice(),
     photos: photos.map(p=>({ id:p.id, supplierId:p.supplierId, type:p.type,
@@ -1013,7 +1333,8 @@ async function doExport(mode){
     const blob=await zip.generateAsync({type:"blob", streamFiles:true});
     const d=new Date(bundle.export.createdAt);
     const stamp=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}`;
-    const name=`FairRecorder-${mode==="today"?"daily":"full"}-${stamp}.zip`;
+    const slug=fairSlug(FAIR||{}).slice(0,40);
+    const name=`FairRecorder-${slug}-${mode==="today"?"daily":"full"}-${stamp}.zip`;
     const file=new File([blob], name, {type:"application/zip"});
     let shared=false;
     try{
@@ -1050,6 +1371,13 @@ $("#fileImport").onchange=async(e)=>{
     const jf=zip.file("suppliers.json");
     if(!jf) throw new Error("ZIP 里没有 suppliers.json");
     const data=JSON.parse(await jf.async("string"));
+    let nf=0;
+    if(data.fair && data.fair.id){
+      const known=await all("fairs");
+      if(!known.some(f=>f.id===data.fair.id)){
+        await put("fairs", Object.assign(newFair({}), data.fair, {archived:false})); nf++;
+      }
+    }
     let ns=0, np=0, nv=0;
     for(const s of (data.suppliers||[])){
       const cur=await get("suppliers", s.id);
@@ -1072,7 +1400,8 @@ $("#fileImport").onchange=async(e)=>{
     }
     if(data.export && data.export.weights) { SETTINGS.weights=data.export.weights; await setKV("weights", SETTINGS.weights); }
     await refresh();
-    toast(`导入完成：记录 ${ns} / 计划 ${nv} / 照片 ${np}`, 5000);
+    if(!FAIR && data.fair && data.fair.id){ await selectFair(data.fair.id); }
+    toast(`导入完成：展会 ${nf} / 记录 ${ns} / 计划 ${nv} / 照片 ${np}`, 5000);
     renderExport();
   }catch(err){ console.error(err); toast("导入失败："+err.message, 6000); }
 };
@@ -1080,6 +1409,8 @@ $("#fileImport").onchange=async(e)=>{
 /* ============================ 设置 ============================ */
 async function renderSettings(){
   await refresh();
+  $("#setFairName").textContent = FAIR ? (FAIR.name||FAIR.nameEn||"（未命名）") : "未选择";
+  $("#setFairDates").textContent = FAIR ? ([FAIR.startDate,FAIR.endDate].filter(Boolean).join(" → ")||"—") : "—";
   $("#setHall").innerHTML=HALLS.map(h=>`<option value="${esc(h)}" ${SETTINGS.defaultHall===h?"selected":""}>${esc(h)}</option>`).join("");
   $("#setHall").onchange=async()=>{ SETTINGS.defaultHall=$("#setHall").value; await setKV("defaultHall", SETTINGS.defaultHall); };
   const w=SETTINGS.weights;
@@ -1108,18 +1439,70 @@ async function renderSettings(){
 /* ============================ 对外桥接（供 sync.js 使用） ============================ */
 window.FR={
   db, get, put, all, del, getKV, setKV, refresh, buildBundle, toast, uid, now, compress, sha256Hex,
-  newSupplier, go,
+  newSupplier, go, pendingChanges, selectFair, curFairId, fairSlug,
   get suppliers(){return SUPPLIERS}, get plans(){return PLANS}, get photos(){return PHOTOS},
-  get settings(){return SETTINGS}
+  get fairs(){return FAIRS}, get fair(){return FAIR},
+  get settings(){return SETTINGS},
+  /* 同步成功后由 sync.js 调用，写回该展会的备份时间戳 */
+  async markPushed(ts){
+    if(!FAIR) return;
+    FAIR.lastPushAt = ts || now();
+    await put("fairs", touchFair(FAIR));
+    await refresh();
+  }
 };
+
+/* ============================ 自动备份定时器 ============================
+   本地永远是第一副本；这里只做"到点提醒式上传"：
+   到间隔且有未上传改动且在线时才推，失败静默重试，绝不阻塞录入。 */
+const AUTO_INTERVALS={off:0, m30:30*60*1000, h2:2*60*60*1000, daily:24*60*60*1000};
+let _autoBusy=false, _autoTimer=null;
+async function autoSyncTick(force){
+  try{
+    if(_autoBusy) return;
+    if(!FAIR) return;
+    const cfg=await getKV("autoSync", null) || {};
+    const mode=cfg.mode||"off";
+    if(mode==="off" && !force) return;
+    if(!window.FRSync || !window.FRSync.ready || !window.FRSync.ready()) return;
+    const gap=AUTO_INTERVALS[mode]||0;
+    const last=await getKV("lastAutoAttemptAt", 0);
+    if(!force && gap && (Date.now()-last) < gap) return;
+    if(!navigator.onLine) return;
+    if(FR.pendingChanges()===0) return;
+    await setKV("lastAutoAttemptAt", Date.now());
+    _autoBusy=true;
+    try{
+      const r=await window.FRSync.push(cfg.scope||"meta");
+      if(r && r.files) toast("已自动备份 "+r.files+" 个文件", 3000);
+    }finally{ _autoBusy=false; }
+    if(typeof renderFairCard==="function") renderFairCard();
+  }catch(e){
+    console.warn("auto sync failed", e);   // 自动备份失败不打扰用户
+  }
+}
+function startAutoTimer(){
+  if(_autoTimer) clearInterval(_autoTimer);
+  _autoTimer=setInterval(()=>autoSyncTick(false), 60*1000);
+  document.addEventListener("visibilitychange", ()=>{
+    if(!document.hidden) setTimeout(()=>autoSyncTick(false), 1500);
+  });
+}
+window.FRAutoSync={tick:autoSyncTick, start:startAutoTimer};
 
 /* ============================ 启动 ============================ */
 (async function init(){
   try{
     await loadSettings();
+    await migrateLegacyFair();
     await refresh();
-    if(window.__undo){ /* 首页可恢复 */ }
+    const savedId=await getKV("currentFairId", null);
+    if(savedId && FAIRS.some(f=>f.id===savedId)) FAIR=FAIRS.find(f=>f.id===savedId);
+    else if(FAIRS.length) { FAIR=FAIRS.find(f=>!f.archived) || FAIRS[0]; await setKV("currentFairId", FAIR.id); }
+    await refresh();
     go("home");
+    if(!FAIR) go("fairs");
+    startAutoTimer();
     if("serviceWorker" in navigator){
       navigator.serviceWorker.register("sw.js").catch(()=>{});
     }
