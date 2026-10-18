@@ -63,6 +63,41 @@ def resolve_repo(token: str, owner: str, name: str, private: bool, desc: str) ->
     return None
 
 
+DATA_README = """# FairRecorder — private supplier store
+
+This repository is written by the FairRecorder PWA running on your phone.
+Keep it **private**.
+
+    data/suppliers.json   full record set (companies, contacts, scores, compliance)
+    data/photos/<id>.jpg  product / business-card photos, one file per photo
+
+Nothing else belongs here. The public repo only holds the app source;
+no supplier data is ever pushed there.
+"""
+
+DATA_GITIGNORE = """.DS_Store
+Thumbs.db
+*.tmp
+"""
+
+
+def seed_data_repo(token: str, owner: str, repo: str, branch: str) -> None:
+    """Give the private store a README + .gitignore so the first sync has a base."""
+    import base64
+
+    for path, text in (("README.md", DATA_README), (".gitignore", DATA_GITIGNORE)):
+        status, body = api("GET", f"/repos/{owner}/{repo}/contents/{path}", token)
+        if status == 200:
+            print(f"  {path}: already present")
+            continue
+        status, body = api("PUT", f"/repos/{owner}/{repo}/contents/{path}", token, {
+            "message": f"Initialise private store ({path})",
+            "content": base64.b64encode(text.encode("utf-8")).decode("ascii"),
+            "branch": branch,
+        })
+        print(f"  {path}: {'created' if status in (200, 201) else f'FAILED {status} {body}'}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--owner", default="", help="GitHub account (defaults to the token owner)")
@@ -93,10 +128,16 @@ def main() -> int:
     data = resolve_repo(token, owner, args.data_repo, private=True,
                         desc="FairRecorder supplier records - private backup store")
     if data is None:
-        print(f"  -> create it yourself at https://github.com/new  "
-              f"(name={args.data_repo}, Private), then re-run this script.\n"
-              "     Fine-grained tokens are usually not allowed to create repositories.")
+        print(f"  -> the name may already be taken but invisible to this token.\n"
+              f"     Open https://github.com/{owner}/{args.data_repo} in a browser:\n"
+              f"       * if it exists  -> add it to the token's repository access list\n"
+              f"       * if 404        -> create it at https://github.com/new (Private)\n"
+              "     A fine-grained token scoped to 'Only select repositories' cannot see\n"
+              "     repositories that are outside its selection, even ones it just created.")
     data_branch = (data or {}).get("default_branch", "main")
+    if data is not None:
+        print("\nseeding the private store")
+        seed_data_repo(token, owner, args.data_repo, data_branch)
 
     if args.skip_push:
         print("skipping push (--skip-push)")
