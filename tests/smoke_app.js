@@ -29,6 +29,10 @@ const check = (cond, m) => (cond ? ok(m) : bad(m));
   page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
 
   await page.goto(BASE, { waitUntil: "networkidle2" });
+  // 等 init() 跑完再断言：deviceId 在 loadSettings() 里写入，可当作启动完成信号
+  await page.waitForFunction(
+    () => window.FR && FR.settings && !!FR.settings.deviceId,
+    { timeout: 20000 });
   await page.waitForSelector("#scr-fairs, #scr-home", { timeout: 10000 });
 
   // 1) 首次启动应落在展会页（还没有任何展会）
