@@ -46,12 +46,14 @@ FairRecorder/
 │  ├─ push_via_api.py         走 REST API 推代码（git 协议被网络拦住时用）
 │  ├─ setup_github.py         建两个仓库（公开代码 / 私有数据）+ 推代码 + 开 Pages
 │  ├─ pull_cloud.py           从私有仓按人拉取展会数据 → inbox/（可直接出报告）
+│  ├─ purge_cloud.py          从私有仓删除误同步的展会（先 dry run，再加 --yes）
 │  ├─ make_sample.py          生成演示用样例导出（两届展会）
 │  └─ make_icons.py           生成 PWA 图标
 ├─ tests/
 │  ├─ test_build_report.py    22 项单元测试（含多展会隔离）
 │  ├─ test_cloud_crypto.py    JS 加密 ↔ Python 解密 的跨语言互操作（真浏览器）
-│  └─ smoke_app.js            真机冒烟：新建展会→录入→切换→隔离→同步页→程序仓拦截
+│  ├─ smoke_app.js            真机冒烟：新建展会→录入→切换→隔离→同步页→程序仓拦截
+│  └─ e2e_cloud.js            端到端联调：真浏览器写私有仓 + Python 拉回出报告
 ├─ config.example.json        → 复制为 config.json 填收件方（gitignore）
 └─ requirements.txt           openpyxl / Pillow / python-docx
 ```
@@ -130,7 +132,12 @@ FairRecorder/
 
 主屏 → **☁️ 云备份** → 填好 owner / repo / branch / 云端根目录 / token → **保存** → **🔌 测试连接** → **⬆️ 立即备份**。
 
-「测试连接」会自动读出您的 GitHub 用户名作为命名空间；读不到时在「访问者命名空间」手填一个即可。
+点「保存」时会顺带校验一次：读 GitHub 用户名作为命名空间、确认仓库是私有（页面会显示
+**私有 ✅ 可备份**）。所以填错仓库或 token 无效，当场就能看到，不必等到备份失败。
+读不到身份时在「访问者命名空间」手填一个即可。
+
+> 云端路径：`users/<GitHub 登录名>/fairs/<展会 id>/`。几个人共用一个私有仓时各写各的
+> 前缀，不会互相覆盖。
 
 - **不做实时同步**：只在手动点击或定时器到期时上传。展馆弱网也不会拖慢录入
 - **自动备份档位**：关闭 / 每 30 分钟 / 每 2 小时 / 每天（仅 App 打开时生效，默认只传元数据）
@@ -306,7 +313,23 @@ GITHUB_TOKEN=<pat> python scripts/pull_cloud.py --owner nbleo --user leo --all-f
 python scripts/build_report.py --inbox inbox --output output --top 5
 ```
 
-`pull_cloud.py` 同样拒绝读公开仓、拒绝读程序仓。
+`pull_cloud.py` 同样拒绝读公开仓、拒绝读程序仓。拉下来的 ZIP 与手机导出完全一致，
+照片与厂家的对应关系也一并带回来，直接进报告。
+
+### 清掉误同步的展会
+
+```bash
+# 先看会删什么（默认 dry run）
+GITHUB_TOKEN=<pat> python scripts/purge_cloud.py --user leo --starts-with "测试"
+
+# 确认无误再真删
+GITHUB_TOKEN=<pat> python scripts/purge_cloud.py --user leo --starts-with "测试" --yes
+
+# 或者按展会 id 精确删一个
+GITHUB_TOKEN=<pat> python scripts/purge_cloud.py --user leo --fair <fair-id> --yes
+```
+
+脚本只动 `<root>/<user>/fairs/` 下面的文件，公开仓一律拒绝。
 
 ---
 
