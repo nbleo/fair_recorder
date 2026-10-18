@@ -176,6 +176,19 @@ token 必须有**写**权限：`Contents: Read and write` + `Pages: Read and wri
 （或用 classic token 勾 `repo` + `workflow`）。只读 token 会在第一步就被拦下并给出提示。
 脚本只从环境变量读 token，不会写进磁盘或 `.git/config`。
 
+> ⚠️ **fine-grained token 的 Repository access 请选「All repositories」**
+> 如果选了「Only select repositories」，脚本建出来的新仓库**不在授权列表里**，
+> 会表现为"创建成功（201）但随后 GET 返回 404"——私有数据仓就是这么卡住的。
+> 已建好的仓库可以事后在 token 设置页加进列表。
+
+**当前状态（2026-10-18）**
+
+| 项 | 值 |
+|---|---|
+| 代码仓 | https://github.com/nbleo/fair_recorder （公开） |
+| PWA 地址 | **https://nbleo.github.io/fair_recorder/** |
+| 数据仓 | https://github.com/nbleo/fairrecorder-data （私有，待 token 授权后启用） |
+
 > **为什么推送走 REST API 而不是 `git push`**
 > 部分网络（含本机）的代理会拦掉 `github.com:443` 的 CONNECT，只放行 `api.github.com`。
 > `scripts/push_via_api.py` 因此改用 Git Data API（blob → tree → commit → update-ref）推代码，
