@@ -2,8 +2,9 @@
 config.json
 
 # Supplier exports and generated reports — never commit these
-inbox/*.zip
-inbox/*.json
+inbox/**/*.zip
+inbox/**/*.json
+inbox/e2e/
 output/
 sample/*.zip
 

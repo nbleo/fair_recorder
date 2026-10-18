@@ -191,6 +191,12 @@ def pull_fair(owner: str, repo: str, branch: str, token: str, root: str, user: s
 
     photos: list[dict] = []
     photo_bytes: dict[str, bytes] = {}
+    # meta.uploadedPhotos 里带着每张照片属于哪家厂家；老版本只存了路径字符串
+    upl = meta.get("uploadedPhotos") or []
+    by_path: dict[str, dict] = {}
+    for u in upl:
+        if isinstance(u, dict) and u.get("path"):
+            by_path[u["path"]] = u
     for path, e in idx.items():
         if not path.startswith(f"{base}/assets/"):
             continue
@@ -200,10 +206,18 @@ def pull_fair(owner: str, repo: str, branch: str, token: str, root: str, user: s
         pid = pid[:-4]
         raw = blob(owner, repo, e["sha"], token)
         data = dec_bytes(raw, key) if key else raw
-        photos.append({"id": pid, "supplierId": None, "type": "product",
+        info = by_path.get(path) or {}
+        photos.append({"id": pid, "supplierId": info.get("supplierId"),
+                       "type": info.get("type") or "product",
                        "path": f"photos/{pid}.jpg", "size": len(data),
-                       "sha256": "", "createdAt": meta.get("updatedAt", "")})
+                       "sha256": "", "createdAt": info.get("createdAt")
+                       or meta.get("updatedAt", "")})
         photo_bytes[pid] = data
+    # 让记录里的 photoIds 与云端照片对得上（老版本可能没有）
+    for s in suppliers:
+        for p in photos:
+            if p.get("supplierId") == s.get("id") and p["id"] not in (s.get("photoIds") or []):
+                s.setdefault("photoIds", []).append(p["id"])
 
     fair = meta.get("fair") or {}
     fair.setdefault("id", fair_id)

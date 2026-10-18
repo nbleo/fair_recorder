@@ -108,16 +108,23 @@
 
   let _ctrl = null;   // 当前同步的 AbortController
 
-  async function api(method, url, body, signal) {
+  async function api(method, url, body, signal, opts) {
     const headers = {
       Authorization: "Bearer " + S.token,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
     };
+    /* 注意：不要加 Cache-Control / Pragma 之类的自定义请求头——GitHub 的 CORS
+     * 预检不允许这些字段，浏览器会直接拦掉所有请求。破缓存改用下面的时间戳参数。 */
     if (body) headers["Content-Type"] = "application/json";
+    /* 刚写完就读 ref / tree 时，GitHub 的边缘节点可能返回上一版副本，
+     * 会让下一次提交 422 "Update is not a fast forward"。
+     * GitHub 忽略未知查询参数，但会因此绕过 CDN 副本。 */
+    const url2 = method === "GET"
+      ? url + (url.includes("?") ? "&" : "?") + "_=" + Date.now() : url;
     let res;
     try {
-      res = await fetch("https://api.github.com" + url, {
+      res = await fetch("https://api.github.com" + url2, {
         method, headers, body: body ? JSON.stringify(body) : undefined,
         signal: signal || (_ctrl && _ctrl.signal) || undefined,
       });
@@ -164,24 +171,39 @@
 
     /* uploadContent: blobs -> tree -> commit -> update ref（一步提交） */
     async uploadContent(files, message) {
-      const ref = await api("GET", `/repos/${S.owner}/${S.repo}/git/ref/heads/${S.branch}`);
-      const parentSha = ref.object.sha;
-      const parent = await api("GET", `/repos/${S.owner}/${S.repo}/git/commits/${parentSha}`);
-
-      const tree = [];
+      /* 1) blob 只传一次：照片最大的开销在这里，重试时不必重传 */
+      const blobs = [];
       for (const f of files) {
         const b = await api("POST", `/repos/${S.owner}/${S.repo}/git/blobs`,
           { content: f.b64, encoding: "base64" });
-        tree.push({ path: f.path, mode: "100644", type: "blob", sha: b.sha });
+        blobs.push({ path: f.path, mode: "100644", type: "blob", sha: b.sha });
         f.b64 = null;                                   // 边传边释放内存
       }
-      const t = await api("POST", `/repos/${S.owner}/${S.repo}/git/trees`,
-        { base_tree: parent.tree.sha, tree });
-      const c = await api("POST", `/repos/${S.owner}/${S.repo}/git/commits`,
-        { message, tree: t.sha, parents: [parentSha] });
-      await api("PATCH", `/repos/${S.owner}/${S.repo}/git/refs/heads/${S.branch}`,
-        { sha: c.sha });
-      return c.sha;
+
+      /* 2) 提交。读到的 ref 可能是旧副本（CDN 一致性）或期间被别的设备推进过，
+       *    PATCH 会 422 "Update is not a fast forward"。
+       *    用最新的 ref 重建 tree/commit 再提交即可——blob 已上传，重试很便宜。 */
+      let lastErr = null;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const ref = await api("GET", `/repos/${S.owner}/${S.repo}/git/ref/heads/${S.branch}`);
+          const parentSha = ref.object.sha;
+          const parent = await api("GET", `/repos/${S.owner}/${S.repo}/git/commits/${parentSha}`);
+          const t = await api("POST", `/repos/${S.owner}/${S.repo}/git/trees`,
+            { base_tree: parent.tree.sha, tree: blobs });
+          const c = await api("POST", `/repos/${S.owner}/${S.repo}/git/commits`,
+            { message, tree: t.sha, parents: [parentSha] });
+          await api("PATCH", `/repos/${S.owner}/${S.repo}/git/refs/heads/${S.branch}`,
+            { sha: c.sha });
+          return c.sha;
+        } catch (e) {
+          if (!/422/.test(String((e && e.message) || ""))) throw e;
+          lastErr = e;
+          log(`提交遇到并发冲突（第 ${attempt + 1} 次），重新读取最新进度后重试…`);
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        }
+      }
+      throw lastErr || new Error("提交失败：无法推进分支");
     },
 
     async getUserInfo() {
@@ -314,6 +336,18 @@
     return r;
   }
 
+  /* 身份：默认用 GitHub 登录名。用户填完配置直接点「立即备份」、
+   * 从没点过「测试连接」时，这里补一次，否则命名空间为空无法写云端 */
+  async function ensureIdentity() {
+    if (S.login) return S.login;
+    try {
+      const u = await Syncer.getUserInfo();
+      S.login = u.login;
+      await saveCfg();
+    } catch (e) { /* 读不到就回落到手填的命名空间 */ }
+    return S.login;
+  }
+
   async function testConnection() {
     if (!configured()) throw new Error("请先填写 owner / repo / token");
     const r = await api("GET", `/repos/${S.owner}/${S.repo}`);
@@ -354,6 +388,7 @@
   async function push(scope) {
     if (!configured()) throw new Error("请先填写 owner / repo / token");
     await assertSafe();
+    await ensureIdentity();
     await FR.refresh();
 
     const st = await Syncer.fetchStructure();
@@ -414,7 +449,11 @@
         tombstones: bundle.export.counts.tombstones,
       },
       chunks: chunks.map((c) => ({ path: c.path, start: c.start, count: c.items.length })),
-      uploadedPhotos: scope === "full" ? (bundle.photos || []).map((p) => assetPath(p.id)) : null,
+      /* 照片必须带上归属，否则从云端拉回来后无法对应到具体厂家 */
+      uploadedPhotos: scope === "full" ? (bundle.photos || []).map((p) => ({
+        path: assetPath(p.id), id: p.id, supplierId: p.supplierId || null,
+        type: p.type || "other", size: p.size || 0, createdAt: p.createdAt || "",
+      })) : null,
       weights: bundle.export.weights,
       encrypted: !!ctx,
       enc: ctx ? ctx.enc : null,
@@ -457,6 +496,7 @@
   async function pull() {
     if (!configured()) throw new Error("请先填写 owner / repo / token");
     if (!FR.fair) throw new Error("未选择展会");
+    await ensureIdentity();
 
     const st = await Syncer.fetchStructure();
     const meta = await readMeta(st);
@@ -662,7 +702,18 @@
       await saveCfg();
       log("配置已保存到本机");
       FR.toast("已保存");
-      await renderStatus();
+      /* 保存后立刻校验一次：仓库是不是私有、我是谁，要让用户在保存的当下就看到，
+       * 而不是等他点「立即备份」才发现填错了仓库或没识别出身份。 */
+      if (configured()) {
+        try {
+          const r = await testConnection();
+          log("连接成功：" + r);
+        } catch (e) {
+          log("校验未通过：" + e.message);
+          FR.toast("请检查配置：" + e.message, 5000);
+        }
+      }
+      try { await renderStatus(); } catch (e) { log("状态刷新失败：" + e.message); }
     };
 
     $("#syTest").onclick = async () => {
