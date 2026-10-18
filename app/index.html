@@ -327,9 +327,21 @@ input[type=date]{min-height:var(--tap)}
     </div>
   </div>
 
-  <button class="btn btn-primary" id="syPush" style="margin-bottom:12px">⬆️ 立即备份</button>
+  <div class="sec">同步动作</div>
+  <button class="btn btn-primary" id="sySync" style="margin-bottom:12px">🔄 双向同步（先把云端新的拉下来，再推本机改动）</button>
+  <button class="btn" id="syPush" style="margin-bottom:12px">⬆️ 立即备份（只推本机改动）</button>
   <button class="btn" id="syPushFull" style="margin-bottom:12px">🖼️ 立即全量备份（含原图）</button>
   <button class="btn" id="syPull" style="margin-bottom:12px">⬇️ 从云端恢复本展会</button>
+  <div class="btn-row">
+    <button class="btn" id="syPullAll">📥 拉取云端全部展会</button>
+    <button class="btn" id="syPushAll">📤 备份本机全部展会</button>
+  </div>
+  <div class="tiny muted" style="margin-top:6px">
+    换设备时：装好 PWA → 这里填同一个 GitHub 账号的 token 和同一个私有仓 →
+    点「拉取云端全部展会」，展会与记录就都过来了。同一条记录以<b>最后修改时间</b>为准，
+    两边都改过则保留时间更晚的那份。
+  </div>
+  <div id="syRemoteList" class="card tiny hide" style="margin-top:10px"></div>
 
   <div class="sec">仓库与访问控制</div>
   <div class="card">
@@ -407,6 +419,17 @@ input[type=date]{min-height:var(--tap)}
   <div class="sec">展会默认值</div>
   <div class="field"><label>默认展馆</label><select id="setHall"></select></div>
   <div class="sec">评分权重（合计须为 100%）</div>
+  <div class="field"><label>快速套用</label>
+    <div class="chips" id="setWPreset">
+      <button class="chip" data-w="default">均衡（默认）</button>
+      <button class="chip" data-w="compliance">合规优先</button>
+      <button class="chip" data-w="price">成本优先</button>
+      <button class="chip" data-w="capacity">交期产能优先</button>
+    </div>
+    <div class="tiny muted" style="margin-top:6px">
+      套用后仍可微调，记得点「保存」。权重会随备份一起上传，其他设备同步后自动一致。
+    </div>
+  </div>
   <div id="setWeights"></div>
   <div class="btn-row" style="margin-top:12px">
     <button class="btn" id="btnResetW">恢复默认</button>
@@ -414,7 +437,11 @@ input[type=date]{min-height:var(--tap)}
   </div>
   <div class="sec">关于</div>
   <div class="card tiny muted">
-    数据只存在这台手机的浏览器本地，不上传任何服务器。卸载 PWA、清理网站数据或更换域名都会导致数据丢失，因此导出备份是唯一的保险。<br><br>
+    <b>本机永远是第一副本</b>：录入先写本地 IndexedDB，离线可用；云备份只是在您点击或定时器到期时
+    写入自己的私有 GitHub 仓库。<br>
+    在另一台设备（或电脑）上装好本 PWA，用<b>同一个 GitHub 账号的 token 和同一个私有仓</b>登录，
+    点「拉取云端全部展会」即可看到同样的内容。<br>
+    即便如此，卸载 PWA、清理网站数据仍会丢数据，<b>导出 ZIP 与云备份请各留一份</b>。<br><br>
     <span id="aboutVer"></span>
   </div>
 </section>
@@ -1455,12 +1482,25 @@ async function renderSettings(){
       <input type="number" inputmode="numeric" data-w="${d[0]}" value="${w[d[0]]}" style="width:96px;min-height:46px">
       <span class="w">%</span>
     </div>`).join("") + `<div class="tiny muted" id="wSum"></div>`;
+  const W_PRESETS={
+    default:{fit:25, compliance:25, quality:15, price:15, capacity:10, communication:10},
+    compliance:{fit:20, compliance:35, quality:15, price:10, capacity:10, communication:10},
+    price:{fit:20, compliance:20, quality:10, price:25, capacity:15, communication:10},
+    capacity:{fit:20, compliance:20, quality:10, price:15, capacity:25, communication:10},
+  };
   const upd=()=>{
     let sum=0; $$("#setWeights input").forEach(i=>sum+=Number(i.value)||0);
     const el=$("#wSum");
     el.textContent="当前合计 "+sum+"% （须为 100%）";
     el.style.color = sum===100 ? "var(--accent)" : "var(--danger)";
   };
+  $$("#setWPreset .chip").forEach(b=>{
+    b.onclick=()=>{
+      const p=W_PRESETS[b.dataset.w]; if(!p) return;
+      $$("#setWeights input").forEach(i=>{ if(p[i.dataset.w]!=null) i.value=p[i.dataset.w]; });
+      upd(); toast("已套用「"+b.textContent+"」，请点保存");
+    };
+  });
   $$("#setWeights input").forEach(i=>i.oninput=upd); upd();
   $("#btnSaveW").onclick=async()=>{
     let sum=0; const nw={};
@@ -1479,6 +1519,13 @@ window.FR={
   get suppliers(){return SUPPLIERS}, get plans(){return PLANS}, get photos(){return PHOTOS},
   get fairs(){return FAIRS}, get fair(){return FAIR},
   get settings(){return SETTINGS},
+  /* 同步时由 sync.js 调用：云端保存的评分权重覆盖本机，保证多设备口径一致 */
+  async setWeights(w){
+    if(!w) return;
+    if(!SCORE_DIMS.every(d=>typeof w[d[0]]==="number")) return;
+    SETTINGS.weights = Object.assign({}, w);
+    await setKV("weights", SETTINGS.weights);
+  },
   /* 同步成功后由 sync.js 调用，写回该展会的备份时间戳 */
   async markPushed(ts){
     if(!FAIR) return;

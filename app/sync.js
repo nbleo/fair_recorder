@@ -122,15 +122,22 @@
      * GitHub 忽略未知查询参数，但会因此绕过 CDN 副本。 */
     const url2 = method === "GET"
       ? url + (url.includes("?") ? "&" : "?") + "_=" + Date.now() : url;
+    /* 展馆里网络抖动是常态。GET 是只读的，重试安全；写请求不重试，避免重复提交。 */
     let res;
-    try {
-      res = await fetch("https://api.github.com" + url2, {
-        method, headers, body: body ? JSON.stringify(body) : undefined,
-        signal: signal || (_ctrl && _ctrl.signal) || undefined,
-      });
-    } catch (e) {
-      if (e && e.name === "AbortError") throw e;
-      throw new Error("网络不可达（" + (e.message || e) + "）");
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await fetch("https://api.github.com" + url2, {
+          method, headers, body: body ? JSON.stringify(body) : undefined,
+          signal: signal || (_ctrl && _ctrl.signal) || undefined,
+        });
+        break;
+      } catch (e) {
+        if (e && e.name === "AbortError") throw e;
+        if (method !== "GET" || attempt >= 2) {
+          throw new Error("网络不可达（" + (e.message || e) + "）");
+        }
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+      }
     }
     if (!res.ok) {
       let extra = "";
@@ -529,14 +536,147 @@
       for (const s of payload.items || []) suppliers.push(s);
     }
 
+    /* 评分权重也随云端走：多设备之间保持一致 */
+    if (meta.weights && FR.setWeights) await FR.setWeights(meta.weights);
+
     const bundle = {
       suppliers,
       visitPlans: [],
-      photos: (meta.uploadedPhotos || []).map((p) => ({
-        id: p.split("/").pop().replace(/\.jpg$/, ""), path: p, supplierId: null,
-      })),
+      photos: cloudPhotos(meta),
     };
-    return applyBundle(bundle, st, key);
+    return applyBundle(bundle, st, key, FR.fair ? FR.fair.id : null, true);
+  }
+
+  /* uploadedPhotos 有两种写法：新版本是带归属的对象，旧版本只是路径字符串 */
+  function cloudPhotos(meta) {
+    return (meta.uploadedPhotos || []).map((p) => (typeof p === "string"
+      ? { id: p.split("/").pop().replace(/\.jpg$/, ""), path: p,
+          supplierId: null, type: "other", createdAt: "" }
+      : { id: p.id, path: p.path, supplierId: p.supplierId || null,
+          type: p.type || "other", createdAt: p.createdAt || "" }));
+  }
+
+  /* ======================= 多终端：列出 / 拉取 / 全量 ======================= */
+
+  /* 云端某个人的全部展会——新设备靠它发现"我有哪些展会" */
+  async function listRemoteFairs() {
+    if (!configured()) throw new Error("请先填写 owner / repo / token");
+    await ensureIdentity();
+    const st = await Syncer.fetchStructure();
+    const base = `${userRoot()}/fairs/`;
+    const out = [];
+    for (const e of st.prefix(base)) {
+      if (!e.path.endsWith("/meta.json")) continue;
+      const id = e.path.slice(base.length).split("/")[0];
+      try {
+        const m = JSON.parse(await Syncer.fetchContent(e, true));
+        if (m.layout === LEGACY_LAYOUT) {          // 旧版单文件布局
+          out.push({ id, name: (m.fair && (m.fair.name || m.fair.nameEn)) || id,
+            nameEn: "", dates: "", suppliers: (m.suppliers || []).length, photos: 0,
+            updatedAt: "", encrypted: false, legacy: true });
+          continue;
+        }
+        const f = m.fair || {};
+        out.push({
+          id,
+          name: f.name || f.nameEn || id,
+          nameEn: f.nameEn || "",
+          dates: [f.startDate, f.endDate].filter(Boolean).join(" → "),
+          suppliers: (m.counts && m.counts.suppliers) || 0,
+          photos: (m.counts && m.counts.photos) || 0,
+          updatedAt: m.updatedAt || "",
+          encrypted: !!m.encrypted,
+        });
+      } catch (err) { /* 单个展会读不动不拖累整体 */ }
+    }
+    out.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    return out;
+  }
+
+  /* 拉取指定展会（不依赖当前选中的展会，供全量拉取复用） */
+  async function pullFair(fairId, opts) {
+    if (!configured()) throw new Error("请先填写 owner / repo / token");
+    await ensureIdentity();
+    const wantPhotos = !opts || opts.photos !== false;
+    const st = await Syncer.fetchStructure();
+    const base = `${userRoot()}/fairs/${fairId}`;
+    const me = st.find(`${base}/meta.json`);
+    if (!me) throw new Error("云端没有这个展会的备份");
+    const meta = JSON.parse(await Syncer.fetchContent(me, true));
+
+    if (meta.layout === LEGACY_LAYOUT) {
+      const data = meta.__legacy || {};
+      await ensureFair(Object.assign({ id: fairId }, data.fair || {}));
+      return applyBundle(data, st, null, fairId, wantPhotos);
+    }
+
+    let key = null;
+    if (meta.encrypted) {
+      const pass = ($("#syPass") && $("#syPass").value) || "";
+      if (!pass) throw new Error("云端数据已加密，请先填写加密口令再拉取");
+      if (!meta.enc || !meta.enc.salt) throw new Error("云端缺少加密参数，无法解密");
+      key = await deriveKey(pass, meta.enc.salt);
+    }
+
+    const suppliers = [];
+    for (const c of meta.chunks || []) {
+      const e = st.find(c.path);
+      if (!e) continue;
+      const parsed = JSON.parse(await Syncer.fetchContent(e, true));
+      const payload = (parsed && parsed.enc === 1) ? await decJSON(parsed, key) : parsed;
+      for (const s of payload.items || []) suppliers.push(s);
+    }
+    if (meta.weights && FR.setWeights) await FR.setWeights(meta.weights);
+    await ensureFair(Object.assign({ id: fairId }, meta.fair || {}));
+    const r = await applyBundle({ suppliers, visitPlans: [], photos: cloudPhotos(meta) },
+      st, key, fairId, wantPhotos);
+    return Object.assign({ id: fairId, name: (meta.fair && (meta.fair.name || meta.fair.nameEn)) || fairId }, r);
+  }
+
+  /* 拉取云端所有展会——换设备后的第一步 */
+  async function pullAll(opts) {
+    const list = await listRemoteFairs();
+    const out = [];
+    for (const f of list) {
+      try {
+        out.push(await pullFair(f.id, opts));
+      } catch (e) {
+        out.push({ id: f.id, name: f.name, error: e.message, suppliers: 0, plans: 0, photos: 0 });
+      }
+    }
+    return out;
+  }
+
+  /* 把本机所有展会都备份一遍（不必逐个切换展会去点） */
+  async function pushAll(scope) {
+    const fairs = await FR.all("fairs");
+    const cur = FR.fair ? FR.fair.id : null;
+    const out = [];
+    for (const f of fairs) {
+      if (f.archived) continue;
+      await FR.selectFair(f.id);
+      try {
+        out.push(Object.assign({ id: f.id, name: f.name || f.nameEn || f.id }, await push(scope)));
+      } catch (e) {
+        out.push({ id: f.id, name: f.name || f.id, error: e.message });
+      }
+    }
+    if (cur) await FR.selectFair(cur);
+    return out;
+  }
+
+  /* 双向同步：先拉云端较新的，再把本机较新的推上去 */
+  async function syncNow(scope) {
+    if (!FR.fair) throw new Error("请先选择一个展会");
+    const out = { pulled: null, pushed: null };
+    try {
+      out.pulled = await pullFair(FR.fair.id, { photos: (scope || S.scope) === "full" });
+    } catch (e) {
+      if (!/没有这个展会|没有本展会/.test(e.message)) throw e;
+      out.pulled = { skipped: "云端还没有这个展会，直接进入上传" };
+    }
+    out.pushed = await push(scope || S.scope || "meta");
+    return out;
   }
 
   async function ensureFair(f) {
@@ -553,7 +693,7 @@
   }
 
   /* 云端 -> 本地：只覆盖云端更新的版本，本地较新的不动 */
-  async function applyBundle(data, st, key) {
+  async function applyBundle(data, st, key, fairId, wantPhotos) {
     let ns = 0, nv = 0, np = 0;
     for (const s of data.suppliers || []) {
       const cur = await FR.get("suppliers", s.id);
@@ -567,21 +707,24 @@
         await FR.put("visitPlans", p); nv++;
       }
     }
-    for (const pm of data.photos || []) {
-      const cur = await FR.get("photos", pm.id);
-      if (cur) continue;
-      const p = pm.path || assetPath(pm.id);
-      const e = st.find(p);
-      if (!e) continue;
-      let blob = await Syncer.fetchContent(e, false);
-      if (key) blob = await decBlob(blob, key);
-      await FR.put("photos", {
-        id: pm.id, fairId: FR.fair ? FR.fair.id : null, supplierId: pm.supplierId,
-        type: pm.type || "other", blob, thumbBlob: await FR.compress(blob, 320, 0.7),
-        size: blob.size, sha256: pm.sha256 || "",
-        createdAt: pm.createdAt || new Date().toISOString(),
-      });
-      np++;
+    if (wantPhotos !== false) {
+      for (const pm of data.photos || []) {
+        const cur = await FR.get("photos", pm.id);
+        if (cur) continue;
+        const p = pm.path || assetPath(pm.id);
+        const e = st.find(p);
+        if (!e) continue;
+        let blob = await Syncer.fetchContent(e, false);
+        if (key) blob = await decBlob(blob, key);
+        await FR.put("photos", {
+          id: pm.id, fairId: fairId || (FR.fair ? FR.fair.id : null),
+          supplierId: pm.supplierId,
+          type: pm.type || "other", blob, thumbBlob: await FR.compress(blob, 320, 0.7),
+          size: blob.size, sha256: pm.sha256 || "",
+          createdAt: pm.createdAt || new Date().toISOString(),
+        });
+        np++;
+      }
     }
     await FR.refresh();
     S.lastSyncAt = new Date().toISOString();
@@ -759,6 +902,86 @@
       }
     };
 
+    /* --- 双向同步：换设备后最常用的动作 --- */
+    $("#sySync").onclick = async () => {
+      try {
+        if (!FR.fair) { FR.toast("请先选择一个展会", 4000); return; }
+        const scope = S.scope || "meta";
+        log(`开始双向同步（${scope === "full" ? "含原图" : "仅元数据"}）…`);
+        const r = await Scheduler.run(() => syncNow(scope));
+        if (!r) return;
+        const p = r.pulled || {};
+        if (p.skipped) log("拉取：" + p.skipped);
+        else log(`拉取：记录 ${p.suppliers} / 照片 ${p.photos}（云端较新的已合并）`);
+        log(`上传：${r.pushed.files} 个文件（脏块 ${r.pushed.chunks}，新照片 ${r.pushed.photos}），commit ${r.pushed.sha}`);
+        FR.toast("双向同步完成", 4000);
+        await renderStatus();
+      } catch (e) {
+        if (e && e.name === "AbortError") { log("同步已取消"); return; }
+        log("同步失败：" + e.message); FR.toast("同步失败：" + e.message, 5000);
+      }
+    };
+
+    /* --- 拉取云端全部展会（换设备后的第一步） --- */
+    $("#syPullAll").onclick = async () => {
+      const box = $("#syRemoteList");
+      try {
+        log("正在读取云端展会清单…");
+        const list = await Scheduler.run(() => listRemoteFairs());
+        if (!list) return;
+        if (box) {
+          box.classList.remove("hide");
+          box.innerHTML = "<b>云端展会（" + list.length + "）</b><br>"
+            + list.map((f) => esc(f.name)
+              + (f.dates ? " · " + esc(f.dates) : "")
+              + " · " + f.suppliers + " 条 / " + f.photos + " 张"
+              + (f.encrypted ? " · 已加密" : "")).join("<br>")
+            || "<i>云端还没有任何展会</i>";
+        }
+        if (!list.length) { log("云端还没有任何展会——先在这台设备备份一次"); return; }
+        const withPhotos = confirm(
+          "将拉取云端 " + list.length + " 个展会。\n\n"
+          + "点「确定」= 连照片一起拉（流量较大）\n点「取消」= 只拉记录与元数据");
+        log("开始拉取全部展会（" + (withPhotos ? "含照片" : "仅记录") + "）…");
+        const res = await Scheduler.run(() => pullAll({ photos: withPhotos }));
+        if (!res) return;
+        let ns = 0, np = 0, err = 0;
+        for (const r of res) {
+          if (r.error) { err++; log("  ✗ " + r.name + "：" + r.error); }
+          else { ns += r.suppliers || 0; np += r.photos || 0; log("  ✓ " + r.name + "：记录 " + r.suppliers + " / 照片 " + r.photos); }
+        }
+        log(`全部拉取完成：新增/更新记录 ${ns} 条、照片 ${np} 张${err ? "，失败 " + err + " 个" : ""}`);
+        FR.toast("已拉取全部展会", 4000);
+        await renderStatus();
+        if (ns || np) FR.toast("展会已同步到本机，可回展会页切换", 5000);
+      } catch (e) {
+        if (e && e.name === "AbortError") { log("已取消"); return; }
+        log("拉取失败：" + e.message); FR.toast("拉取失败：" + e.message, 5000);
+      }
+    };
+
+    /* --- 备份本机全部展会 --- */
+    $("#syPushAll").onclick = async () => {
+      try {
+        const scope = S.scope || "meta";
+        if (!confirm("将备份本机所有未归档的展会（" + scope
+          + (scope === "full" ? "，含原图" : "，仅元数据") + "）。继续？")) return;
+        log("开始备份全部展会…");
+        const res = await Scheduler.run(() => pushAll(scope));
+        if (!res) return;
+        for (const r of res) {
+          if (r.error) log("  ✗ " + r.name + "：" + r.error);
+          else log("  ✓ " + r.name + "：" + r.files + " 个文件，commit " + r.sha);
+        }
+        log("全部展会备份完成（" + res.length + " 个）");
+        FR.toast("全部展会已备份", 4000);
+        await renderStatus();
+      } catch (e) {
+        if (e && e.name === "AbortError") { log("已取消"); return; }
+        log("备份失败：" + e.message); FR.toast("备份失败：" + e.message, 5000);
+      }
+    };
+
     $("#syInvite").onclick = () => {
       if (!configured()) { FR.toast("请先填写并保存 owner / repo", 4000); return; }
       window.open(`https://github.com/${S.owner}/${S.repo}/settings/access`, "_blank");
@@ -769,6 +992,8 @@
   /* 供自动备份定时器调用 */
   window.FRSync = {
     push, pull, ready, testConnection,
+    /* 多终端：发现云端展会 / 拉取单个 / 拉全部 / 推全部 / 双向同步 */
+    listRemoteFairs, pullFair, pullAll, pushAll, syncNow,
     get busy() { return Scheduler.busy; },
     /* 测试钩子：让 tests/ 能验证 JS 加密 ↔ Python 解密 的互操作性 */
     _crypto: { deriveKey, newSaltB64, encJSON, decJSON, encBlob, decBlob, ENC },

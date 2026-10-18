@@ -95,7 +95,8 @@ def main() -> int:
             import base64
             try:
                 meta = json.loads(base64.b64decode(b["content"]))
-                names[fid] = (meta.get("fair") or {}).get("name") or meta.get("fair", {}).get("nameEn", "")
+                f = meta.get("fair") or {}
+                names[fid] = (f.get("name") or "", f.get("nameEn") or "")
             except Exception:
                 pass
 
@@ -103,8 +104,8 @@ def main() -> int:
     if args.fair:
         victims.add(args.fair)
     elif args.starts_with:
-        for fid, nm in names.items():
-            if nm.startswith(args.starts_with):
+        for fid, nm in names.items():          # nm = (中文名, 英文名)，任一匹配即可
+            if any(x.startswith(args.starts_with) for x in nm if x):
                 victims.add(fid)
     else:
         raise SystemExit("give --fair or --starts-with")
@@ -117,7 +118,7 @@ def main() -> int:
     print(f"{'DELETE' if args.yes else 'would delete'} {len(doomed)} file(s) "
           f"under {len(victims)} fair(s) in {args.owner}/{args.repo}:")
     for v in sorted(victims):
-        print(f"  - {v}  {names.get(v, '')}")
+        print(f"  - {v}  {names.get(v, ('',))[0]}")
     if not args.yes:
         print("\ndry run — add --yes to delete")
         return 0
