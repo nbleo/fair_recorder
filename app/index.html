@@ -224,6 +224,7 @@ input[type=date]{min-height:var(--tap)}
     <button class="btn" id="btnExport">💾 导出备份</button>
     <button class="btn" id="btnSync">☁️ 云同步</button>
   </div>
+  <button class="btn btn-accent" id="btnReport" style="margin-bottom:10px">📄　生成英文报告</button>
   <button class="btn" id="btnSettings">⚙️ 设置</button>
 </section>
 
@@ -405,6 +406,63 @@ input[type=date]{min-height:var(--tap)}
   <div id="syLog" class="card tiny muted" style="max-height:220px;overflow:auto">尚无操作</div>
 </section>
 
+<!-- ============ REPORT ============ -->
+<section id="scr-report" class="hide">
+  <div class="banner banner-info">
+    <div>📄 在手机上直接生成<b>英文报告</b>（与电脑端脚本同一套口径：权重、分层、合规证据措辞一致），
+      含照片、对比矩阵与重点推荐，可分享、打印或存成 PDF。</div>
+  </div>
+
+  <div class="sec">报告抬头（封面上的 Prepared for）</div>
+  <div class="card">
+    <input id="rpFor" type="text" placeholder="Schulte – Shower enclosure sourcing" autocapitalize="words">
+    <div class="tiny muted" style="margin-top:6px">只写在本机，用于报告封面，可留空。</div>
+  </div>
+
+  <div class="sec">范围</div>
+  <div class="card">
+    <div class="chips" id="rpScope">
+      <button class="chip" data-scope="fair">当前展会</button>
+      <button class="chip" data-scope="all">全部展会合并</button>
+    </div>
+    <div class="tiny muted" style="margin-top:8px" id="rpScopeHint"></div>
+  </div>
+
+  <div class="sec">重点推荐条数</div>
+  <div class="card">
+    <div class="chips" id="rpTop">
+      <button class="chip" data-top="3">Top 3</button>
+      <button class="chip" data-top="5">Top 5</button>
+      <button class="chip" data-top="10">Top 10</button>
+    </div>
+  </div>
+
+  <div class="sec">照片</div>
+  <div class="card">
+    <div class="chips" id="rpPhoto">
+      <button class="chip" data-photo="1">含照片（每家最多 3 张）</button>
+      <button class="chip" data-photo="0">不含照片（体积小、速度快）</button>
+    </div>
+  </div>
+
+  <div class="sec">内容概览</div>
+  <div id="rpSummary" class="card tiny muted">正在统计…</div>
+
+  <button class="btn btn-primary" id="btnRpPreview" style="margin-bottom:12px">👁　预览英文报告</button>
+  <button class="btn btn-accent" id="btnRpHtml" style="margin-bottom:12px">📄 导出 / 分享 HTML 报告</button>
+  <div class="btn-row" style="margin-bottom:12px">
+    <button class="btn" id="btnRpXlsx">📊 导出 Excel</button>
+    <button class="btn" id="btnRpCsv">🗂 导出 CSV</button>
+  </div>
+  <div class="tiny muted" style="margin-bottom:16px;line-height:1.7">
+    iPhone 分享面板可选「存储到文件」或发到微信；想要 PDF：先「预览英文报告」，
+    再点报告里的 <b>Print / Save as PDF</b>，在打印预览中双指放大即可存成 PDF。<br>
+    需要带公司抬头的 DOCX / XLSX，回到电脑把导出的 ZIP 放进 <b>inbox/</b> 跑
+    <b>build_report.py</b> 即可。
+  </div>
+  <div id="rpResult" class="card hide"></div>
+</section>
+
 <!-- ============ SETTINGS ============ -->
 <section id="scr-settings" class="hide">
   <div class="sec">当前展会</div>
@@ -454,6 +512,7 @@ input[type=date]{min-height:var(--tap)}
 
 <script src="vendor/jszip.min.js"></script>
 <script src="sync.js"></script>
+<script src="report.js"></script>
 <script>
 "use strict";
 /* ============================ 常量 ============================ */
@@ -832,6 +891,7 @@ const SCREENS={
   plans:{title:"预拜访清单", back:true, fn:renderPlans},
   export:{title:"导出与恢复", back:true, fn:renderExport},
   sync:{title:"云备份", back:true, fn:()=>{ if(window.renderSync) window.renderSync(); }},
+  report:{title:"生成报告", sub:"英文报告 · 可直接分享或存 PDF", back:true, fn:renderReport},
   settings:{title:"设置", back:true, fn:renderSettings}
 };
 let STACK=["home"];
@@ -901,6 +961,7 @@ $("#btnList").onclick=()=>go("list");
 $("#btnPlans").onclick=()=>go("plans");
 $("#btnExport").onclick=()=>go("export");
 $("#btnSync").onclick=()=>go("sync");
+$("#btnReport").onclick=()=>go("report");
 $("#btnSettings").onclick=()=>go("settings");
 
 function fairHall(){ return (FAIR && FAIR.defaultHall) || SETTINGS.defaultHall || "A区"; }
@@ -1456,7 +1517,9 @@ $("#fileImport").onchange=async(e)=>{
       const entry=zip.file(meta.path);
       if(!entry) continue;
       const blob=await entry.async("blob");
-      await put("photos",{ id:meta.id, supplierId:meta.supplierId, type:meta.type||"other",
+      /* fairId 必须写：否则照片进不了任何展会，出报告时会被范围过滤掉 */
+      await put("photos",{ id:meta.id, fairId:(data.fair && data.fair.id) || curFairId() || null,
+        supplierId:meta.supplierId, type:meta.type||"other",
         blob, thumbBlob:await compress(blob,320,0.7), size:blob.size, sha256:meta.sha256||"",
         createdAt:meta.createdAt||now() });
       np++;
@@ -1467,6 +1530,110 @@ $("#fileImport").onchange=async(e)=>{
     toast(`导入完成：展会 ${nf} / 记录 ${ns} / 计划 ${nv} / 照片 ${np}`, 5000);
     renderExport();
   }catch(err){ console.error(err); toast("导入失败："+err.message, 6000); }
+};
+
+/* ============================ 报告 ============================ */
+let RP = {scope:"fair", top:5, photo:1, preparedFor:""};
+async function renderReport(){
+  await refresh();
+  RP.preparedFor = await getKV("rpPreparedFor", "");
+  RP.scope = await getKV("rpScope", "fair");
+  RP.top   = await getKV("rpTop", 5);
+  RP.photo = await getKV("rpPhoto", 1);
+  $("#rpFor").value = RP.preparedFor;
+
+  const mark=(sel,attr,val)=>$$(sel+" .chip").forEach(b=>b.setAttribute("aria-pressed", b.dataset[attr]==String(val)?"true":"false"));
+  mark("#rpScope","scope",RP.scope); mark("#rpTop","top",RP.top); mark("#rpPhoto","photo",RP.photo);
+
+  const scopeBtn=(sel,attr,key)=>$$(sel+" .chip").forEach(b=>{
+    b.onclick=async()=>{
+      const raw=b.dataset[attr];
+      RP[key] = attr==="scope" ? raw : Number(raw);
+      await setKV("rp"+key.charAt(0).toUpperCase()+key.slice(1), RP[key]);
+      renderReport();
+    };
+  });
+  scopeBtn("#rpScope","scope","scope");
+  scopeBtn("#rpTop","top","top");
+  scopeBtn("#rpPhoto","photo","photo");
+  $("#rpFor").oninput=async()=>{ RP.preparedFor=$("#rpFor").value; await setKV("rpPreparedFor", RP.preparedFor); };
+
+  const nFairs=(await all("fairs")).filter(f=>!f.deletedAt).length;
+  $("#rpScopeHint").textContent = RP.scope==="all"
+    ? `把全部 ${nFairs} 个展会合成一份报告（展会名以最新一届为封面）`
+    : (FAIR ? "只统计当前展会："+(FAIR.nameEn||FAIR.name) : "未选择展会，请先到「展会」里选一个");
+
+  /* 概览：先按轻量口径统计，不读照片 */
+  const ctx = await window.FRReport.buildContext({
+    fairId: RP.scope==="all" ? null : (FAIR?FAIR.id:null),
+    all: RP.scope==="all", topN: RP.top, withPhotos:false, preparedFor:RP.preparedFor,
+  });
+  const rated=ctx.suppliers.filter(s=>s._rankable).length;
+  const drafts=ctx.suppliers.filter(s=>s._state==="draft").length;
+  const photoN=(await all("photos")).filter(p=>ctx.fairs.some(f=>f.id===p.fairId)).length;
+  $("#rpSummary").innerHTML =
+    `<div class="kv"><span class="k">记录</span><span class="v">${ctx.suppliers.length} 家（已评分 ${rated} / 草稿 ${drafts}）</span></div>`
+    + `<div class="kv"><span class="k">照片</span><span class="v">${photoN} 张${RP.photo?"（报告内嵌，文件会变大）":"（不含）"}</span></div>`
+    + `<div class="kv"><span class="k">重点推荐</span><span class="v">${ctx.picks.length} 家</span></div>`
+    + `<div class="kv"><span class="k">预拜访未到访</span><span class="v">${ctx.plans.filter(p=>p.status!=="visited").length} 家</span></div>`
+    + (ctx.picks.length?`<div style="margin-top:8px">${ctx.picks.map((s,i)=>`${i+1}. ${esc(s._company)} · ${s._score}`).join("<br>")}</div>`:"");
+}
+async function rpContext(){
+  return await window.FRReport.buildContext({
+    fairId: RP.scope==="all" ? null : (FAIR?FAIR.id:null),
+    all: RP.scope==="all", topN: RP.top, withPhotos: RP.photo===1, preparedFor:RP.preparedFor,
+  });
+}
+function rpResult(html){
+  const el=$("#rpResult"); el.classList.remove("hide"); el.innerHTML=html;
+}
+$("#btnRpPreview").onclick=async()=>{
+  try{
+    toast("正在生成…", 8000);
+    const ctx=await rpContext();
+    const w=window.FRReport.openPreview(window.FRReport.renderHTML(ctx));
+    if(typeof w==="string"){
+      /* 弹窗被拦截时退回内嵌预览 */
+      rpResult(`<iframe src="${esc(w)}" style="width:100%;height:70vh;border:0;border-radius:12px;background:#fff"></iframe>`);
+      toast("已内嵌预览（浏览器拦截了新窗口）", 4000);
+    }else{ toast("已打开预览", 3000); }
+  }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
+};
+$("#btnRpHtml").onclick=async()=>{
+  try{
+    toast("正在生成 HTML…", 10000);
+    const ctx=await rpContext();
+    const html=window.FRReport.renderHTML(ctx);
+    const name=window.FRReport.fileName(ctx,"html");
+    const blob=new Blob([html],{type:"text/html"});
+    const shared=await window.FRReport.share(blob, name, "text/html");
+    rpResult(`<b>已生成 ${esc(name)}</b>
+      <div class="kv"><span class="k">大小</span><span class="v">${(blob.size/1048576).toFixed(2)} MB</span></div>
+      <div class="kv"><span class="k">记录 / 推荐</span><span class="v">${ctx.suppliers.length} 家 / ${ctx.picks.length} 家</span></div>
+      <div class="tiny muted" style="margin-top:8px">${shared?"":"已触发下载。"}想要 PDF：分享到「文件」后用 Safari 打开并打印，或先点「预览英文报告」用里面的 Print 按钮。</div>`);
+  }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
+};
+$("#btnRpXlsx").onclick=async()=>{
+  try{
+    toast("正在生成 Excel…", 10000);
+    const ctx=await rpContext();
+    const blob=await window.FRReport.toXLSX(ctx);
+    const name=window.FRReport.fileName(ctx,"xlsx");
+    await window.FRReport.share(blob, name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    rpResult(`<b>已生成 ${esc(name)}</b>
+      <div class="kv"><span class="k">工作表</span><span class="v">Supplier Master · Category Comparison</span></div>
+      <div class="tiny muted" style="margin-top:8px">Excel / Numbers / WPS 可直接打开。</div>`);
+  }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
+};
+$("#btnRpCsv").onclick=async()=>{
+  try{
+    const ctx=await rpContext();
+    const csv=window.FRReport.toCSV(ctx,"master");
+    const name=window.FRReport.fileName(ctx,"csv");
+    await window.FRReport.share(new Blob([csv],{type:"text/csv"}), name, "text/csv");
+    rpResult(`<b>已生成 ${esc(name)}</b>
+      <div class="tiny muted" style="margin-top:8px">带 UTF-8 BOM，Excel 双击直接打开不乱码。</div>`);
+  }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
 };
 
 /* ============================ 设置 ============================ */
@@ -1516,6 +1683,10 @@ async function renderSettings(){
 window.FR={
   db, get, put, all, del, getKV, setKV, refresh, buildBundle, toast, uid, now, compress, sha256Hex,
   newSupplier, go, pendingChanges, selectFair, curFairId, fairSlug,
+  /* 供 report.js 复用：常量表与纯计算函数，避免两处实现走样 */
+  consts:{CATEGORIES, SCORE_DIMS, COMPLIANCE, CSTAT, FOLLOWUPS, MARKETS, PHOTO_TYPES, DEFAULT_WEIGHTS},
+  util:{esc, labelOf, missing, scoreFilled, stateOf, weightedScore, tierOf,
+        complianceBlockers, slugify, fairDateLabel},
   get suppliers(){return SUPPLIERS}, get plans(){return PLANS}, get photos(){return PHOTOS},
   get fairs(){return FAIRS}, get fair(){return FAIR},
   get settings(){return SETTINGS},

@@ -8,6 +8,11 @@ inbox/e2e/
 output/
 sample/*.zip
 
+# Test / scratch output
+.tmp_*
+.tmp_dl_report/
+.tmp_dl/
+
 # Workspace internals
 .workbuddy/
 

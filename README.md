@@ -48,12 +48,15 @@ FairRecorder/
 │  ├─ pull_cloud.py           从私有仓按人拉取展会数据 → inbox/（可直接出报告）
 │  ├─ purge_cloud.py          从私有仓删除误同步的展会（先 dry run，再加 --yes）
 │  ├─ make_sample.py          生成演示用样例导出（两届展会）
+│  ├─ gen_mobile_sample.py    用样本数据在真浏览器里跑一遍手机端报告 → output/mobile-sample/
 │  └─ make_icons.py           生成 PWA 图标
 ├─ tests/
 │  ├─ test_build_report.py    22 项单元测试（含多展会隔离）
 │  ├─ test_cloud_crypto.py    JS 加密 ↔ Python 解密 的跨语言互操作（真浏览器）
 │  ├─ smoke_app.js            真机冒烟：新建展会→录入→切换→隔离→同步页→程序仓拦截
-│  └─ e2e_cloud.js            端到端联调：真浏览器写私有仓 + Python 拉回出报告
+│  ├─ e2e_cloud.js            端到端联调：真浏览器写私有仓 + Python 拉回出报告
+│  ├─ e2e_multidevice.js      多设备联调：两台"手机"互相同步展会/记录/照片/权重
+│  └─ e2e_report.js           手机端报告联调：HTML / XLSX / CSV 内容与结构校验
 ├─ config.example.json        → 复制为 config.json 填收件方（gitignore）
 └─ requirements.txt           openpyxl / Pillow / python-docx
 ```
@@ -152,6 +155,33 @@ FairRecorder/
 ### B. 导出 ZIP（离线兜底）
 
 主屏 → **导出备份** → 分享面板选 **「存储到文件」**，再发一份到微信文件传输助手（两份副本）。
+
+---
+
+## 五之二、在手机上直接出英文报告
+
+主屏 → **📄 生成英文报告**。不需要电脑，当场就能把报告发给总部。
+
+报告在设备本地生成（不上传任何服务器），口径与电脑端 `build_report.py` **完全一致**：
+同一套权重、同样的分层（≥80 Shortlist / 70–79 Follow-up / 60–69 Reserve / <60 Low priority）、
+同样的合规证据措辞（只有 "Copy received"、"Document seen" 算证据，"Supplier claimed" 只是口头声称）。
+
+| 按钮 | 产物 | 用途 |
+|---|---|---|
+| 👁 预览英文报告 | 新窗口打开可打印的 HTML | 检查内容；点报告里的 **Print / Save as PDF** 存成 PDF |
+| 📄 导出 / 分享 HTML 报告 | `.html`（照片内嵌） | 微信 / 邮件 / 存「文件」，任何浏览器都能打开 |
+| 📊 导出 Excel | `.xlsx`（两个工作表） | Supplier Master + Category Comparison，Excel/WPS 直接开 |
+| 🗂 导出 CSV | `.csv`（带 UTF-8 BOM） | 最通用的表格交换格式 |
+
+报告页可调：范围（当前展会 / 全部展会合并）、重点推荐条数（Top 3 / 5 / 10）、
+是否内嵌照片（每家最多 3 张；关掉则体积小、速度快）。封面抬头 `Prepared for` 可自填，只存在本机。
+
+报告结构：1 执行摘要 → 2 范围与方法（含权重表）→ 3 供应商目录（每家一页，含照片与合规）
+→ 4 分类对比矩阵 → 5 重点推荐（含"立即要做的事"）→ 6 跟进计划 → 7 附录（完整清单 / 未拜访 / 数据出处）。
+
+> 需要带公司抬头的 **DOCX** 时，仍走电脑端：把导出的 ZIP 放进 `inbox/` 跑 `build_report.py`。
+> 想先看手机端成品长什么样：`python scripts/gen_mobile_sample.py`（用样本数据跑真浏览器，
+> 产物在 `output/mobile-sample/`）。
 
 ---
 
