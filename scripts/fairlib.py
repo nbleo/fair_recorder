@@ -576,6 +576,16 @@ def build_fair_context(exports: list[Export], out_root: Path, top_n: int,
         weights = dict(DEFAULT_WEIGHTS)
 
     keep_ids = {s["id"] for s in suppliers}
+    # 照片可能缺 supplierId（老数据 / 早期导入）。用厂家自己记录的 photoIds 反查归属，
+    # 否则手机里显示的照片数会大于报告里出现的照片数。
+    owner_of: dict[str, str] = {}
+    for s in suppliers:
+        for pid in (s.get("photoIds") or []):
+            owner_of[str(pid)] = s["id"]
+    for ex in exports:
+        for meta in ex.bundle.get("photos") or []:
+            if not meta.get("supplierId") and str(meta.get("id")) in owner_of:
+                meta["supplierId"] = owner_of[str(meta.get("id"))]
     photos = collect_photos(exports, keep_ids)
     photo_index, pissues = materialise_photos(photos, out_root)
     issues.extend(pissues)

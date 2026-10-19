@@ -184,13 +184,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(/Executive Summary/.test(html), "HTML 含 Executive Summary");
   check(/Scope &amp; Methodology/.test(html), "HTML 含方法论章节");
   check(/Supplier Catalogue/.test(html), "HTML 含供应商目录");
-  check(/Comparison Matrix/.test(html), "HTML 含对比矩阵");
-  check(/Key Recommendations/.test(html), "HTML 含重点推荐");
-  check(/Next Steps/.test(html), "HTML 含跟进章节");
+  /* v1.6：报告只保留 1 / 2 / 3 三章 */
+  check(!/Comparison Matrix/.test(html), "HTML 已删除第 4 章 对比矩阵");
+  check(!/Key Recommendations/.test(html), "HTML 已删除第 5 章 重点推荐");
+  check(!/Next Steps/.test(html), "HTML 已删除第 6 章 跟进");
+  check(!/Appendix/.test(html), "HTML 已删除第 7 章 附录");
+  check(!/Still draft|Planned but not visited|Photos captured|Planned \/ walk-in/.test(html),
+    "Executive Summary 已删除 draft / planned / photos 统计");
+  check(/Scoring weights/.test(html) && !/Compliance evidence states|Price comparability/.test(html),
+    "Scope & Methodology 只留 Scoring weights");
+  check(!/MOQ \/ Price \/ Lead time/.test(html), "目录已删除 MOQ / Price / Lead time");
+  check(!/<span class='k'>Compliance<\/span>/.test(html), "目录已删除 Compliance 行");
   check(/Alpha Sanitary \(甲厂\)/.test(html), "公司名中英并列");
   check(/Shortlist/.test(html), "高分组进入 Shortlist");
-  check(/Not available/.test(html), "合规「无」被标为 Not available");
-  check(/Conditional shortlist|conditional only/.test(html), "关键合规缺失 → 条件性入围提示");
+  check(/not available/i.test(html), "合规缺失仍在摘要里提示");
+  /* Top recommendations 现在是全部厂家，不只 Top N */
+  const rowCount = (html.match(/<tr><td>\d+<\/td><td>/g) || []).length;
+  check(rowCount >= 2, "Top recommendations 列出所有厂家（实际 " + rowCount + " 行）");
   check(/data:image\/jpeg;base64,/.test(html), "照片以 data URL 内嵌");
   check(/Print \/ Save as PDF/.test(html), "报告内含打印按钮");
   check(!/undefined/.test(html.replace(/undefined-/g, "")), "HTML 没有 undefined 泄漏");

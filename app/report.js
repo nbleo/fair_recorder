@@ -118,10 +118,17 @@
     /* photos: only for suppliers in scope — no cap, every photo is embedded */
     const photoIndex = {};
     if (withPhotos) {
+      /* 照片可能缺 supplierId（老数据、导入的 ZIP）。用厂家自己记录的 photoIds 反查归属，
+         否则 App 里显示的照片数会大于报告里出现的照片数。 */
+      const ownerOf = {};
+      for (const s of suppliers) {
+        for (const pid of (s.photoIds || [])) ownerOf[pid] = s.id;
+      }
       const bySup = {};
       for (const p of photoPool) {
-        if (!p.supplierId) continue;
-        (bySup[p.supplierId] = bySup[p.supplierId] || []).push(p);
+        const sid = p.supplierId || ownerOf[p.id];
+        if (!sid || !fairOfSup[sid]) continue;
+        (bySup[sid] = bySup[sid] || []).push(p);
       }
       for (const s of suppliers) {
         const list = (bySup[s.id] || []).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
@@ -280,7 +287,13 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
   }
   function open(i){ show(i); lb.classList.add('on'); }
   function close(){ lb.classList.remove('on'); lb.classList.remove('zoomed'); }
-  imgs.forEach(function(el,k){ el.addEventListener('click',function(){ open(k); }); });
+  imgs.forEach(function(el,k){
+    var guard=false;
+    function go(){ if(guard) return; guard=true; setTimeout(function(){guard=false;},500); open(k); }
+    el.addEventListener('click',go);
+    /* 部分安卓浏览器 / 微信内嵌浏览器点图不会合成 click，用 touchend 兜底 */
+    el.addEventListener('touchend',function(e){ e.preventDefault(); go(); });
+  });
   lb.querySelector('.lbclose').addEventListener('click',function(e){ e.stopPropagation(); close(); });
   lb.querySelector('.lbprev').addEventListener('click',function(e){ e.stopPropagation(); show(idx-1); });
   lb.querySelector('.lbnext').addEventListener('click',function(e){ e.stopPropagation(); show(idx+1); });
@@ -298,14 +311,24 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
     if(!swiping) return;
     if(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10) moved=true;
   });
+  var closeTimer=null;
   lb.addEventListener('pointerup',function(e){
     swiping=false;
     if(!moved){
       var now=Date.now();
-      if(now-lastTap<320){ lb.classList.toggle('zoomed'); lastTap=0; }
-      else { lastTap=now; if(e.target===lb||e.target===stage) close(); }
+      if(now-lastTap<320){                       /* 第二下：放大 / 还原 */
+        if(closeTimer){ clearTimeout(closeTimer); closeTimer=null; }
+        lb.classList.toggle('zoomed'); lastTap=0; return;
+      }
+      /* 第一下先不关：留 300ms 给第二下，否则双击放大永远触发不到 */
+      lastTap=now;
+      var tgt=e.target;
+      if(closeTimer) clearTimeout(closeTimer);
+      closeTimer=setTimeout(function(){ closeTimer=null;
+        if(tgt===lb||tgt===stage) close(); }, 300);
       return;
     }
+    if(closeTimer){ clearTimeout(closeTimer); closeTimer=null; }
     var dx=e.clientX-sx, dy=e.clientY-sy;
     if(Math.abs(dx)>45 && Math.abs(dx)>Math.abs(dy)) show(idx+(dx<0?1:-1));
   });
@@ -325,12 +348,6 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
     const ev = ctx.event;
     const total = ctx.suppliers.length;
     const rated = ctx.suppliers.filter((s) => s._rankable);
-    const drafts = ctx.suppliers.filter((s) => s._state === "draft");
-    const planned = ctx.suppliers.filter((s) => s.source === "planned");
-    const walkin = ctx.suppliers.filter((s) => s.source === "walk_in");
-    const manual = ctx.suppliers.filter((s) => s.source === "manual");
-    const unvisited = ctx.plans.filter((p) => p.status !== "visited");
-    const photoCount = Object.values(ctx.photoIndex).reduce((n, a) => n + a.length, 0);
 
     const h = [];
     h.push("<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>");
@@ -345,16 +362,19 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
     /* 1 */
     h.push("<h2>1. Executive Summary</h2><div class='card'>");
     h.push(`<div class='kv'><span class='k'>Suppliers recorded</span><span>${total}</span></div>`);
-    h.push(`<div class='kv'><span class='k'>Fully rated</span><span>${rated.length}</span></div>`);
-    h.push(`<div class='kv'><span class='k'>Still draft (incomplete)</span><span>${drafts.length}</span></div>`);
-    h.push(`<div class='kv'><span class='k'>Planned / walk-in / manual entry</span><span>${planned.length} / ${walkin.length} / ${manual.length}</span></div>`);
-    h.push(`<div class='kv'><span class='k'>Planned but not visited</span><span>${unvisited.length}</span></div>`);
-    h.push(`<div class='kv'><span class='k'>Photos captured</span><span>${photoCount}</span></div></div>`);
-    if (ctx.picks.length) {
-      h.push("<h3>Top recommendations</h3><table><tr><th>#</th><th>Supplier</th><th>Booth</th><th>Categories</th><th>Score</th><th>Tier</th></tr>");
-      ctx.picks.forEach((s, i) => {
+    h.push(`<div class='kv'><span class='k'>Fully rated</span><span>${rated.length}</span></div></div>`);
+    /* 列出所有厂家（不止 Top N），已评分的在前，未评分的排最后 */
+    const ranking = ctx.suppliers.slice().sort((a, b) => {
+      const av = a._score == null ? -1 : a._score, bv = b._score == null ? -1 : b._score;
+      return (bv - av) || (a._company < b._company ? -1 : 1);
+    });
+    if (ranking.length) {
+      h.push("<h3>Top recommendations — all suppliers</h3>"
+        + "<table><tr><th>#</th><th>Supplier</th><th>Booth</th><th>Categories</th><th>Score</th><th>Tier</th></tr>");
+      ranking.forEach((s, i) => {
         h.push(`<tr><td>${i + 1}</td><td>${e(s._company)}</td><td>${e(s.boothNo || "—")}</td>`
-          + `<td>${e(catsEn(s).join(", "))}</td><td>${s._score}</td><td>${e(s._tier)}</td></tr>`);
+          + `<td>${e(catsEn(s).join(", "))}</td><td>${s._score == null ? "not ranked" : s._score}</td>`
+          + `<td>${e(s._tier)}</td></tr>`);
       });
       h.push("</table>");
     }
@@ -363,28 +383,14 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
       h.push(`<div class='warn'><b>${risks.length} supplier(s)</b> recorded a key compliance item as not available. `
         + "They can only be shortlisted conditionally, subject to documentary verification.</div>");
     }
-    if (drafts.length) {
-      h.push(`<div class='warn'>${drafts.length} record(s) are still drafts and miss mandatory fields; `
-        + "they are listed for completeness but should not drive a sourcing decision yet.</div>");
-    }
 
     /* 2 */
     h.push("<h2>2. Scope &amp; Methodology</h2><div class='card'>");
-    h.push("<p class='small'>Records were captured on site with an offline-first mobile app (<i>FairRecorder</i>). "
-      + "This report was generated directly on the recording device from the local database.</p>");
     h.push("<h3>Scoring weights</h3><table><tr><th>Dimension</th><th>Weight</th><th>Meaning of 1 / 5</th></tr>");
     for (const d of C().SCORE_DIMS) {
       h.push(`<tr><td>${e(d[2])}</td><td>${ctx.weights[d[0]] || 0}%</td><td>${e(MEANING[d[0]] || "")}</td></tr>`);
     }
-    h.push("</table>");
-    h.push("<p class='small'>Total score is the weighted sum on a 0–100 scale. A supplier is ranked only when all six "
-      + "dimensions are filled. Tiers: ≥80 Shortlist, 70–79 Follow-up, 60–69 Reserve, &lt;60 Low priority.</p>");
-    h.push("<h3>Compliance evidence states</h3><p class='small'>"
-      + C().CSTAT.map((c) => `<b>${e(c[2])}</b>`).join(", ")
-      + ". Only <i>Copy received</i> and <i>Document seen</i> constitute evidence; "
-      + "<i>Supplier claimed</i> is an unverified statement and is reported as such.</p>");
-    h.push("<h3>Price comparability</h3><p class='small'>Prices are only compared where currency, Incoterm and unit match. "
-      + "Mixed bases are marked <i>Not directly comparable</i> rather than being ranked.</p></div>");
+    h.push("</table></div>");
 
     /* 3 */
     h.push("<h2>3. Supplier Catalogue</h2>");
@@ -402,17 +408,8 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
         const ways = [s.phone, s.wechat, s.email].filter(Boolean).join(" · ");
         h.push(`<div class='kv'><span class='k'>Contact</span><span>${e(contact)}${ways ? " · " + e(ways) : ""}</span></div>`);
         h.push(`<div class='kv'><span class='k'>Products</span><span>${e(s.productDetails || "—")}</span></div>`);
-        h.push(`<div class='kv'><span class='k'>MOQ / Price / Lead time</span><span>`
-          + `${e(moqText(s))} · ${e(priceText(s))} · ${e(leadText(s))}</span></div>`);
         h.push(`<div class='kv'><span class='k'>Capacity / Markets</span><span>${e(capText(s))} · `
           + `${e(marketsEn(s).join(", ") || "—")} · EU/DE experience: ${e(s.euGermanyExperience || "Unknown")}</span></div>`);
-        const compRows = C().COMPLIANCE
-          .filter((c) => complianceEn(s, c[0]) !== "Unknown")
-          .map((c) => `<span class='badge b-follow'>${e(c[0])}: ${e(complianceEn(s, c[0]))}</span>`).join("");
-        h.push(`<div class='kv'><span class='k'>Compliance</span><span>${compRows || "<span class='mut'>Unknown — nothing recorded</span>"}</span></div>`);
-        if (s._blockers.length) {
-          h.push(`<div class='warn'>Key item(s) marked not available: ${e(s._blockers.join(", "))} — conditional only, pending documentary verification.</div>`);
-        }
         if (s.notes) h.push(`<div class='kv'><span class='k'>Notes</span><span>${e(s.notes)}</span></div>`);
         if (s.nextAction) {
           h.push(`<div class='kv'><span class='k'>Next action</span><span>${e(s.nextAction)}${s.nextActionDate ? " · due " + e(s.nextActionDate) : ""}</span></div>`);
@@ -428,82 +425,6 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
       }
     }
 
-    /* 4 */
-    h.push("<h2>4. Comparison Matrix</h2>");
-    for (const [, name, items] of groups) {
-      const keys = new Set(items.filter((s) => priceText(s) !== "n/a")
-        .map((s) => [s.currency, s.incoterm, s.priceUnit].join("|")));
-      h.push(`<h3>${e(name)}${keys.size > 1 ? " — prices not directly comparable" : ""}</h3>`);
-      h.push("<table><tr><th>Supplier</th><th>Booth</th><th>MOQ</th><th>Price</th><th>Lead time</th>"
-        + "<th>EU/DE</th><th>CE</th><th>EN 14428</th><th>EN 12150</th><th>Score</th><th>Tier</th></tr>");
-      for (const s of items) {
-        h.push(`<tr><td>${e(s._company)}</td><td>${e(s.boothNo || "—")}</td><td>${e(moqText(s))}</td>`
-          + `<td>${e(priceText(s))}</td><td>${e(leadText(s))}</td><td>${e(s.euGermanyExperience || "—")}</td>`
-          + `<td>${e(complianceEn(s, "CE"))}</td><td>${e(complianceEn(s, "EN14428"))}</td>`
-          + `<td>${e(complianceEn(s, "EN12150"))}</td><td>${s._rankable ? s._score : "not ranked"}</td>`
-          + `<td>${e(s._tier)}</td></tr>`);
-      }
-      h.push("</table>");
-    }
-
-    /* 5 */
-    h.push("<h2>5. Key Recommendations</h2>");
-    if (!ctx.picks.length) {
-      h.push("<div class='warn'>No supplier has a complete six-dimension rating yet, so no ranking is possible.</div>");
-    }
-    ctx.picks.forEach((s, i) => {
-      const verdict = s._blockers.length ? "Conditional shortlist" : "Shortlist";
-      const todo = [];
-      if (s._missing.length) todo.push("complete the record (" + s._missing.join(", ") + ")");
-      todo.push("request copies of CE / EN 14428 / EN 12150 declarations");
-      if (C().COMPLIANCE.some((c) => ["Unknown", "Supplier claimed"].includes(complianceEn(s, c[0])))) {
-        todo.push("verify claimed certificates against original documents");
-      }
-      todo.push("request a quotation with stated MOQ, Incoterm and lead time");
-      h.push("<div class='card'>");
-      h.push(`<h3 style='margin-top:0'>${i + 1}. ${e(s._company)} — ${e(s._tier)} (${s._score}/100)</h3>`);
-      h.push(`<p class='small'>${e(recommendationText(s))}</p>`);
-      h.push(`<div class='kv'><span class='k'>Verdict</span><span><b>${verdict}</b></span></div>`);
-      const ways = [s.phone, s.wechat, s.email].filter(Boolean).join(" / ");
-      h.push(`<div class='kv'><span class='k'>Contact</span><span>${e(s.contactName || "—")}${ways ? " · " + e(ways) : ""}</span></div>`);
-      h.push(`<div class='kv'><span class='k'>Immediate actions</span><span>${e(todo.join("; "))}</span></div>`);
-      h.push("</div>");
-    });
-
-    /* 6 */
-    h.push("<h2>6. Next Steps &amp; Follow-up</h2><div class='card'><table>"
-      + "<tr><th>Supplier</th><th>Follow-up status</th><th>Next action</th><th>Due</th></tr>");
-    for (const s of ctx.suppliers) {
-      if (s.followUpStatus === "reject") continue;
-      h.push(`<tr><td>${e(s._company)}</td><td>${e(followupEn(s))}</td>`
-        + `<td>${e(s.nextAction || "Send introduction and request documentation")}</td>`
-        + `<td>${e(s.nextActionDate || "—")}</td></tr>`);
-    }
-    h.push("</table></div>");
-
-    /* 7 */
-    h.push("<h2>7. Appendix</h2><h3>7.1 Complete supplier list</h3>");
-    h.push("<table><tr><th>#</th><th>Supplier</th><th>Booth</th><th>Categories</th><th>State</th><th>Score</th></tr>");
-    ctx.suppliers.forEach((s, i) => {
-      h.push(`<tr><td>${i + 1}</td><td>${e(s._company)}</td><td>${e(s.boothNo || "—")}</td>`
-        + `<td>${e(catsEn(s).join(", "))}</td><td>${e(s._state)}</td><td>${s._rankable ? s._score : "not ranked"}</td></tr>`);
-    });
-    h.push("</table>");
-    h.push("<h3>7.2 Planned suppliers not visited</h3>");
-    if (unvisited.length) {
-      h.push("<table><tr><th>Company</th><th>Booth</th><th>Goal</th><th>Priority</th></tr>");
-      for (const p of unvisited) {
-        h.push(`<tr><td>${e(p.companyName || "")}</td><td>${e(p.boothNo || "")}</td><td>${e(p.goal || "")}</td><td>${e(p.priority || "")}</td></tr>`);
-      }
-      h.push("</table>");
-    } else {
-      h.push("<p class='small mut'>None.</p>");
-    }
-    h.push("<h3>7.3 Data provenance</h3><div class='card small'>");
-    h.push(`<div class='kv'><span class='k'>Source</span><span>On-device database (IndexedDB) · device ${e(String(FR().settings.deviceId || "").slice(0, 8))}</span></div>`);
-    h.push(`<div class='kv'><span class='k'>Fairs in scope</span><span>${e(ctx.fairs.map((f) => f.nameEn || f.name).join("; ") || "—")}</span></div>`);
-    h.push(`<div class='kv'><span class='k'>Weights applied</span><span>${e(C().SCORE_DIMS.map((d) => d[2] + " " + (ctx.weights[d[0]] || 0) + "%").join(" · "))}</span></div>`);
-    h.push("</div>");
     h.push("<p class='small mut' style='margin-top:40px'>Generated by FairRecorder from on-site mobile records. "
       + "Scores reflect field observations recorded at the fair and are not a substitute for factory audit or certificate verification.</p>");
     h.push("</div><script>" + LIGHTBOX_JS + "</script></body></html>");

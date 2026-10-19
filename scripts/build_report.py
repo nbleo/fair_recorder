@@ -62,7 +62,9 @@ def _b64_image(path_str: str, max_side: int = 640) -> str:
 
 
 def _photo_pick(ctx: F.Context, sid: str, n: int = 2) -> list[dict]:
-    return (ctx.photos_by_supplier.get(sid) or [])[:n]
+    """n <= 0 表示不限张数（报告里照片不再截断）。"""
+    lst = ctx.photos_by_supplier.get(sid) or []
+    return lst if n <= 0 else lst[:n]
 
 
 # --------------------------------------------------------------------------- #
@@ -161,7 +163,7 @@ def write_master_xlsx(ctx: F.Context, path: Path) -> None:
     ws6.append(["Company", "Booth", "Photo", "Type"])
     row = 2
     for s in ctx.suppliers:
-        phs = _photo_pick(ctx, s["id"], 3)
+        phs = ctx.photos_by_supplier.get(s["id"]) or []
         if not phs:
             ws6.cell(row=row, column=1, value=s["_company"])
             ws6.cell(row=row, column=2, value=s.get("boothNo", ""))
@@ -359,31 +361,25 @@ def write_html(ctx: F.Context, path: Path) -> None:
     h.append("<h2>1. Executive Summary</h2>")
     h.append(f"<div class='card'>"
              f"<div class='kv'><span class='k'>Suppliers recorded</span><span>{total}</span></div>"
-             f"<div class='kv'><span class='k'>Fully rated</span><span>{len(rated)}</span></div>"
-             f"<div class='kv'><span class='k'>Still draft (incomplete)</span><span>{len(drafts)}</span></div>"
-             f"<div class='kv'><span class='k'>Planned / walk-in / manual entry</span><span>{len(planned)} / {len(walkin)} / {len(manual)}</span></div>"
-             f"<div class='kv'><span class='k'>Planned but not visited</span><span>{len(unvisited)}</span></div>"
-             f"<div class='kv'><span class='k'>Photos captured</span><span>{len(ctx.photo_index)}</span></div></div>")
-    if picks:
-        h.append("<h3>Top recommendations</h3><table><tr><th>#</th><th>Supplier</th><th>Booth</th>"
+             f"<div class='kv'><span class='k'>Fully rated</span><span>{len(rated)}</span></div></div>")
+    # 列出所有厂家（不止 Top N）：已评分的在前，未评分的排最后
+    ranking = sorted(ctx.suppliers,
+                     key=lambda s: (-(s["_score"] if s["_score"] is not None else -1), s["_company"]))
+    if ranking:
+        h.append("<h3>Top recommendations — all suppliers</h3><table><tr><th>#</th><th>Supplier</th><th>Booth</th>"
                  "<th>Categories</th><th>Score</th><th>Tier</th></tr>")
-        for i, s in enumerate(picks, 1):
+        for i, s in enumerate(ranking, 1):
+            score = s["_score"] if s["_score"] is not None else "not ranked"
             h.append(f"<tr><td>{i}</td><td>{F.e(s['_company'])}</td><td>{F.e(s.get('boothNo',''))}</td>"
-                     f"<td>{F.e(', '.join(F.categories_en(s)))}</td><td>{s['_score']}</td><td>{F.e(s['_tier'])}</td></tr>")
+                     f"<td>{F.e(', '.join(F.categories_en(s)))}</td><td>{F.e(score)}</td><td>{F.e(s['_tier'])}</td></tr>")
         h.append("</table>")
     risks = [s for s in ctx.suppliers if s["_blockers"]]
     if risks:
         h.append(f"<div class='warn'><b>{len(risks)} supplier(s)</b> recorded a key compliance item as "
                  f"not available. They can only be shortlisted conditionally, subject to documentary verification.</div>")
-    if drafts:
-        h.append(f"<div class='warn'>{len(drafts)} record(s) are still drafts and miss mandatory fields; "
-                 f"they are listed for completeness but should not drive a sourcing decision yet.</div>")
 
     # Methodology
     h.append("<h2>2. Scope &amp; Methodology</h2><div class='card'>")
-    h.append("<p class='small'>Records were captured on site with an offline-first mobile app "
-             "(<i>FairRecorder</i>), then merged from the exported backups. Merging is idempotent: "
-             "records are keyed by a stable UUID and the newest revision wins; deletions are carried as tombstones.</p>")
     h.append("<h3>Scoring weights</h3><table><tr><th>Dimension</th><th>Weight</th><th>Meaning of 1 / 5</th></tr>")
     meaning = {
         "fit": "Clearly off-target / Strong match with the sourcing programme",
@@ -396,14 +392,6 @@ def write_html(ctx: F.Context, path: Path) -> None:
     for code, zh, en in F.SCORE_DIMS:
         h.append(f"<tr><td>{F.e(en)}</td><td>{F.e(ctx.weights.get(code,0))}%</td><td>{F.e(meaning.get(code,''))}</td></tr>")
     h.append("</table>")
-    h.append("<p class='small'>Total score is the weighted sum on a 0–100 scale. A supplier is ranked only when "
-             "all six dimensions are filled. Tiers: ≥80 Shortlist, 70–79 Follow-up, 60–69 Reserve, &lt;60 Low priority.</p>")
-    h.append("<h3>Compliance evidence states</h3><p class='small'>"
-             + ", ".join(f"<b>{F.e(v[1])}</b>" for v in F.CSTAT.values())
-             + ". Only <i>Copy received</i> and <i>Document seen</i> constitute evidence; "
-               "<i>Supplier claimed</i> is an unverified statement and is reported as such.</p>")
-    h.append("<h3>Price comparability</h3><p class='small'>Prices are only compared where currency, Incoterm and "
-             "unit match. Mixed bases are marked <i>Not directly comparable</i> rather than being ranked.</p>")
     h.append("</div>")
 
     # Catalogue
@@ -423,20 +411,9 @@ def write_html(ctx: F.Context, path: Path) -> None:
                      f"{F.e(' / '.join(x for x in (s.get('contactName'), s.get('contactTitle')) if x)) or '—'}"
                      f"{(' · ' + F.e(' · '.join(x for x in (s.get('phone'), s.get('wechat'), s.get('email')) if x))) if any((s.get('phone'), s.get('wechat'), s.get('email'))) else ''}</span></div>")
             h.append(f"<div class='kv'><span class='k'>Products</span><span>{F.e(s.get('productDetails') or '—')}</span></div>")
-            h.append(f"<div class='kv'><span class='k'>MOQ / Price / Lead time</span><span>"
-                     f"{F.e(F.moq_text(s))} · {F.e(F.price_text(s))} · "
-                     f"{F.e(str(s.get('leadTimeDays')) + ' d' if s.get('leadTimeDays') else 'n/a')}</span></div>")
             h.append(f"<div class='kv'><span class='k'>Capacity / Markets</span><span>"
                      f"{F.e(F.capacity_text(s))} · {F.e(', '.join(F.markets_en(s)) or '—')} · "
                      f"EU/DE experience: {F.e(s.get('euGermanyExperience') or 'Unknown')}</span></div>")
-            comp_rows = "".join(
-                f"<span class='badge b-follow'>{F.e(c[2])}: {F.e(F.compliance_state_en(s, c[0]))}</span>"
-                for c in F.COMPLIANCE_ITEMS
-                if F.compliance_state_en(s, c[0]) != "Unknown")
-            h.append(f"<div class='kv'><span class='k'>Compliance</span><span>{comp_rows or '<span class=mut>Unknown — nothing recorded</span>'}</span></div>")
-            if s["_blockers"]:
-                h.append(f"<div class='warn'>Key item(s) marked not available: {F.e(', '.join(s['_blockers']))} "
-                         f"— conditional only, pending documentary verification.</div>")
             if s.get("notes"):
                 h.append(f"<div class='kv'><span class='k'>Notes</span><span>{F.e(s['notes'])}</span></div>")
             if s.get("nextAction"):
@@ -444,98 +421,11 @@ def write_html(ctx: F.Context, path: Path) -> None:
                          f"{(' · due ' + F.e(s['nextActionDate'])) if s.get('nextActionDate') else ''}</span></div>")
             if s["_state"] == "draft":
                 h.append(f"<div class='warn small'>Draft record — missing: {F.e(', '.join(s['_missing']))}</div>")
-            imgs = _photo_pick(ctx, s["id"], 3)
+            imgs = ctx.photos_by_supplier.get(s["id"]) or []
             if imgs:
                 h.append("<div class='grid'>" + "".join(
                     f"<img src='{_b64_image(p['file'])}' alt='{F.e(p.get('type'))}'>" for p in imgs) + "</div>")
             h.append("</div>")
-
-    # Comparison matrix
-    h.append("<h2>4. Comparison Matrix</h2>")
-    for code, name, items in F.grouped_by_category(ctx):
-        keys = {F.price_key(s) for s in items if F.price_text(s) != "n/a"}
-        note = "" if len(keys) <= 1 else " — prices not directly comparable"
-        h.append(f"<h3>{F.e(name)}{F.e(note)}</h3>")
-        h.append("<table><tr><th>Supplier</th><th>Booth</th><th>MOQ</th><th>Price</th><th>Lead time</th>"
-                 "<th>EU/DE</th><th>CE</th><th>EN 14428</th><th>EN 12150</th><th>Score</th><th>Tier</th></tr>")
-        for s in items:
-            h.append(f"<tr><td>{F.e(s['_company'])}</td><td>{F.e(s.get('boothNo',''))}</td>"
-                     f"<td>{F.e(F.moq_text(s))}</td><td>{F.e(F.price_text(s))}</td>"
-                     f"<td>{F.e(str(s.get('leadTimeDays')) + ' d' if s.get('leadTimeDays') else 'n/a')}</td>"
-                     f"<td>{F.e(s.get('euGermanyExperience') or '—')}</td>"
-                     f"<td>{F.e(F.compliance_state_en(s,'CE'))}</td>"
-                     f"<td>{F.e(F.compliance_state_en(s,'EN14428'))}</td>"
-                     f"<td>{F.e(F.compliance_state_en(s,'EN12150'))}</td>"
-                     f"<td>{F.e(s['_score'] if s['_rankable'] else 'not ranked')}</td>"
-                     f"<td>{F.e(s['_tier'])}</td></tr>")
-        h.append("</table>")
-
-    # Recommendations
-    h.append("<h2>5. Key Recommendations</h2>")
-    if not picks:
-        h.append("<div class='warn'>No supplier has a complete six-dimension rating yet, so no ranking is possible.</div>")
-    for i, s in enumerate(picks, 1):
-        verdict = "Conditional shortlist" if s["_blockers"] else "Shortlist"
-        h.append("<div class='card'>")
-        h.append(f"<h3 style='margin-top:0'>{i}. {F.e(s['_company'])} — {F.e(s['_tier'])} ({s['_score']}/100)</h3>")
-        h.append(f"<p class='small'>{F.e(F.recommendation_text(s))}</p>")
-        h.append(f"<div class='kv'><span class='k'>Verdict</span><span><b>{F.e(verdict)}</b></span></div>")
-        h.append(f"<div class='kv'><span class='k'>Contact</span><span>{F.e(s.get('contactName') or '—')} · "
-                 f"{F.e(' / '.join(x for x in (s.get('phone'), s.get('wechat'), s.get('email')) if x))}</span></div>")
-        gaps = s["_missing"]
-        todo = []
-        if gaps:
-            todo.append("complete the record (" + ", ".join(gaps) + ")")
-        todo.append("request copies of CE / EN 14428 / EN 12150 declarations")
-        if any(F.compliance_state_en(s, c[0]) in ("Unknown", "Supplier claimed") for c in F.COMPLIANCE_ITEMS):
-            todo.append("verify claimed certificates against original documents")
-        todo.append("request a quotation with stated MOQ, Incoterm and lead time")
-        h.append(f"<div class='kv'><span class='k'>Immediate actions</span><span>{F.e('; '.join(todo))}</span></div>")
-        h.append("</div>")
-
-    # Next steps
-    h.append("<h2>6. Next Steps &amp; Follow-up</h2><div class='card'>")
-    h.append("<table><tr><th>Supplier</th><th>Follow-up status</th><th>Next action</th><th>Due</th></tr>")
-    for s in ctx.suppliers:
-        if s.get("followUpStatus", "new") == "reject":
-            continue
-        h.append(f"<tr><td>{F.e(s['_company'])}</td><td>{F.e(F.followup_en(s))}</td>"
-                 f"<td>{F.e(s.get('nextAction') or 'Send introduction and request documentation')}</td>"
-                 f"<td>{F.e(s.get('nextActionDate') or '—')}</td></tr>")
-    h.append("</table></div>")
-
-    # Appendix
-    h.append("<h2>7. Appendix</h2>")
-    h.append("<h3>7.1 Complete supplier list</h3>")
-    h.append("<table><tr><th>#</th><th>Supplier</th><th>Booth</th><th>Categories</th><th>State</th><th>Score</th></tr>")
-    for i, s in enumerate(ctx.suppliers, 1):
-        h.append(f"<tr><td>{i}</td><td>{F.e(s['_company'])}</td><td>{F.e(s.get('boothNo',''))}</td>"
-                 f"<td>{F.e(', '.join(F.categories_en(s)))}</td><td>{F.e(s['_state'])}</td>"
-                 f"<td>{F.e(s['_score'] if s['_rankable'] else 'not ranked')}</td></tr>")
-    h.append("</table>")
-    h.append("<h3>7.2 Planned suppliers not visited</h3>")
-    if unvisited:
-        h.append("<table><tr><th>Company</th><th>Booth</th><th>Goal</th><th>Priority</th></tr>")
-        for p in unvisited:
-            h.append(f"<tr><td>{F.e(p.get('companyName',''))}</td><td>{F.e(p.get('boothNo',''))}</td>"
-                     f"<td>{F.e(p.get('goal',''))}</td><td>{F.e(p.get('priority',''))}</td></tr>")
-        h.append("</table>")
-    else:
-        h.append("<p class='small mut'>None.</p>")
-    h.append("<h3>7.3 Data quality &amp; processing log</h3><div class='card small'>")
-    h.append(f"<div class='kv'><span class='k'>Export files merged</span><span>{len(ctx.exports)}</span></div>")
-    for x in ctx.exports:
-        h.append(f"<div class='kv'><span class='k'>{F.e(x['file'])}</span><span>"
-                 f"{F.e(json.dumps(x['counts'], ensure_ascii=False))} · {F.e(x.get('createdAt') or '')}</span></div>")
-    if ctx.issues:
-        h.append("<h3 style='margin-top:16px'>Issues detected</h3><ul>")
-        for it in ctx.issues:
-            h.append(f"<li>{F.e(it)}</li>")
-        h.append("</ul>")
-    else:
-        h.append("<p class='mut'>No integrity issues detected: all archives passed CRC, all declared photo "
-                 "hashes and sizes matched.</p>")
-    h.append("</div>")
 
     h.append("<p class='small mut' style='margin-top:40px'>Generated by FairRecorder from on-site mobile "
              "records. Scores reflect field observations recorded at the fair and are not a substitute for "
@@ -616,30 +506,24 @@ def write_docx(ctx: F.Context, path: Path) -> None:
     table(["Metric", "Value"], [
         ["Suppliers recorded", total],
         ["Fully rated (all six dimensions)", len(rated)],
-        ["Still draft / incomplete", len(drafts)],
-        ["Planned / walk-in / manual entry", planned_txt],
-        ["Planned but not visited", len(unvisited)],
-        ["Photos captured", len(ctx.photo_index)],
     ], widths=[8.0, 8.0])
-    if picks:
-        para("Top recommendations", size=11, bold=True)
+    # 列出所有厂家（不止 Top N）：已评分的在前，未评分的排最后
+    ranking = sorted(ctx.suppliers,
+                     key=lambda s: (-(s["_score"] if s["_score"] is not None else -1), s["_company"]))
+    if ranking:
+        para("Top recommendations — all suppliers", size=11, bold=True)
         table(["#", "Supplier", "Booth", "Categories", "Score", "Tier"],
               [[i, s["_company"], s.get("boothNo", ""), ", ".join(F.categories_en(s)),
-                s["_score"], s["_tier"]] for i, s in enumerate(picks, 1)],
+                s["_score"] if s["_score"] is not None else "not ranked", s["_tier"]]
+               for i, s in enumerate(ranking, 1)],
               widths=[0.8, 5.6, 1.9, 4.0, 1.5, 2.2])
     risks = [s for s in ctx.suppliers if s["_blockers"]]
     if risks:
         para(f"Risk note: {len(risks)} supplier(s) recorded a key compliance item as not available. "
              f"They can only be shortlisted conditionally, subject to documentary verification.", size=10)
-    if drafts:
-        para(f"Data note: {len(drafts)} record(s) are still drafts missing mandatory fields and should not "
-             f"drive a sourcing decision before completion.", size=10)
 
     doc.add_page_break()
     h1("2. Scope & Methodology")
-    para("Records were captured on site with an offline-first mobile application (FairRecorder) and merged "
-         "from the exported backups. Merging is idempotent: records are keyed by a stable UUID, the newest "
-         "revision wins, and deletions are carried as tombstones.", size=10)
     h2("2.1 Scoring weights")
     meaning = {
         "fit": "Clearly off-target / Strong match with the sourcing programme",
@@ -652,16 +536,6 @@ def write_docx(ctx: F.Context, path: Path) -> None:
     table(["Dimension", "Weight", "1 / 5 means"],
           [[en, f"{ctx.weights.get(code, 0)}%", meaning.get(code, "")] for code, _, en in F.SCORE_DIMS],
           widths=[5.0, 1.6, 9.4])
-    para("Total score is the weighted sum on a 0–100 scale; a supplier is ranked only when all six dimensions "
-         "are filled. Tiers: ≥80 Shortlist, 70–79 Follow-up, 60–69 Reserve, <60 Low priority.", size=10)
-    h2("2.2 Compliance evidence states")
-    para("; ".join(f"{v[1]}" for v in F.CSTAT.values()), size=10)
-    para("Only 'Copy received' and 'Document seen' constitute evidence. 'Supplier claimed' is an unverified "
-         "statement and is reported as such.", size=10)
-    h2("2.3 Price comparability")
-    para("Prices are compared only where currency, Incoterm and unit match; mixed bases are marked "
-         "'Not directly comparable' instead of being ranked.", size=10)
-
     doc.add_page_break()
     h1("3. Supplier Catalogue")
     for code, name, items in F.grouped_by_category(ctx):
@@ -676,15 +550,9 @@ def write_docx(ctx: F.Context, path: Path) -> None:
                 ["Channels", " / ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x) or "—"],
                 ["Categories", ", ".join(F.categories_en(s))],
                 ["Products", s.get("productDetails") or "—"],
-                ["MOQ", F.moq_text(s)],
-                ["Price", F.price_text(s)],
-                ["Lead time", f"{s.get('leadTimeDays')} d" if s.get("leadTimeDays") else "n/a"],
                 ["Capacity", F.capacity_text(s)],
                 ["Export markets", ", ".join(F.markets_en(s)) or "—"],
                 ["EU / DE experience", s.get("euGermanyExperience") or "Unknown"],
-                ["Compliance", ", ".join(
-                    f"{c[2]}: {F.compliance_state_en(s, c[0])}" for c in F.COMPLIANCE_ITEMS
-                    if F.compliance_state_en(s, c[0]) != "Unknown") or "Unknown — nothing recorded"],
                 ["Notes", s.get("notes") or "—"],
                 ["Next action", (s.get("nextAction") or "—")
                  + (f" (due {s.get('nextActionDate')})" if s.get("nextActionDate") else "")],
@@ -694,86 +562,12 @@ def write_docx(ctx: F.Context, path: Path) -> None:
             if s["_blockers"]:
                 para("Key compliance item(s) marked not available: " + ", ".join(s["_blockers"])
                      + " — conditional only, pending documentary verification.", size=10, bold=True)
-            for p in _photo_pick(ctx, s["id"], 2):
+            for p in (ctx.photos_by_supplier.get(s["id"]) or []):
                 try:
                     doc.add_picture(p["report"], width=Cm(7.0))
                 except Exception:  # noqa: BLE001
                     pass
             doc.add_paragraph()
-
-    doc.add_page_break()
-    h1("4. Comparison Matrix")
-    for code, name, items in F.grouped_by_category(ctx):
-        keys = {F.price_key(s) for s in items if F.price_text(s) != "n/a"}
-        note = "" if len(keys) <= 1 else " (prices not directly comparable)"
-        h2(f"{name}{note}")
-        table(["Supplier", "Booth", "MOQ", "Price", "Lead", "EU/DE", "CE", "EN 14428", "EN 12150", "Score"],
-              [[s["_company"], s.get("boothNo", ""), F.moq_text(s), F.price_text(s),
-                f"{s.get('leadTimeDays')} d" if s.get("leadTimeDays") else "n/a",
-                s.get("euGermanyExperience") or "—",
-                F.compliance_state_en(s, "CE"), F.compliance_state_en(s, "EN14428"),
-                F.compliance_state_en(s, "EN12150"),
-                s["_score"] if s["_rankable"] else "not ranked"] for s in items],
-              widths=[3.6, 1.4, 1.6, 2.4, 1.0, 1.0, 1.4, 1.4, 1.4, 1.2])
-
-    doc.add_page_break()
-    h1("5. Key Recommendations")
-    if not picks:
-        para("No supplier has a complete six-dimension rating yet, so no ranking is possible.", size=10)
-    for i, s in enumerate(picks, 1):
-        verdict = "Conditional shortlist" if s["_blockers"] else "Shortlist"
-        h2(f"{i}. {s['_company']} — {s['_tier']} ({s['_score']}/100)")
-        para(F.recommendation_text(s), size=10)
-        todo = []
-        if s["_missing"]:
-            todo.append("complete the record (" + ", ".join(s["_missing"]) + ")")
-        todo.append("request copies of CE / EN 14428 / EN 12150 declarations")
-        if any(F.compliance_state_en(s, c[0]) in ("Unknown", "Supplier claimed") for c in F.COMPLIANCE_ITEMS):
-            todo.append("verify claimed certificates against original documents")
-        todo.append("request a quotation with stated MOQ, Incoterm and lead time")
-        table(["Item", "Detail"], [
-            ["Verdict", verdict],
-            ["Contact", f"{s.get('contactName') or '—'} · " +
-             " / ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x)],
-            ["Immediate actions", "; ".join(todo)],
-        ], widths=[3.4, 12.6])
-
-    doc.add_page_break()
-    h1("6. Next Steps & Follow-up")
-    table(["Supplier", "Status", "Next action", "Due"],
-          [[s["_company"], F.followup_en(s),
-            s.get("nextAction") or "Send introduction and request documentation",
-            s.get("nextActionDate") or "—"]
-           for s in ctx.suppliers if s.get("followUpStatus", "new") != "reject"],
-          widths=[5.0, 2.4, 6.6, 2.0])
-
-    h1("7. Appendix")
-    h2("7.1 Complete supplier list")
-    table(["#", "Supplier", "Booth", "Categories", "State", "Score"],
-          [[i, s["_company"], s.get("boothNo", ""), ", ".join(F.categories_en(s)), s["_state"],
-            s["_score"] if s["_rankable"] else "not ranked"]
-           for i, s in enumerate(ctx.suppliers, 1)],
-          widths=[0.8, 5.4, 1.8, 4.4, 1.6, 2.0])
-
-    h2("7.2 Planned suppliers not visited")
-    if unvisited:
-        table(["Company", "Booth", "Goal", "Priority"],
-              [[p.get("companyName", ""), p.get("boothNo", ""), p.get("goal", ""), p.get("priority", "")]
-               for p in unvisited], widths=[5.2, 2.0, 6.4, 2.4])
-    else:
-        para("None.", size=10)
-
-    h2("7.3 Data quality & processing log")
-    table(["Export file", "Counts", "Created"],
-          [[x["file"], json.dumps(x["counts"], ensure_ascii=False), x.get("createdAt") or ""]
-           for x in ctx.exports] or [["(none)", "", ""]], widths=[5.0, 6.0, 5.0])
-    if ctx.issues:
-        h2("Issues detected")
-        for it in ctx.issues:
-            para("• " + it, size=9)
-    else:
-        para("No integrity issues detected: all archives passed CRC, all declared photo hashes and sizes matched.",
-             size=9)
 
     para("Generated by FairRecorder from on-site mobile records. Scores reflect field observations recorded at "
          "the fair and are not a substitute for a factory audit or certificate verification.", size=9, italic=True)

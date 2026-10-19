@@ -88,6 +88,11 @@ input[type=date]{min-height:var(--tap)}
 .item .nm{font-weight:700;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item .meta{font-size:13px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item.on{border-color:var(--accent);box-shadow:0 0 0 2px rgba(31,31,175,.18)}
+/* 预拜访清单：按钮换行排在第二行，窄屏也不会挤成一团 */
+.plan-item{flex-wrap:wrap}
+.plan-item .body{flex:1 1 100%}
+.plan-item .acts{flex:1 1 100%;display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.plan-item .acts .btn{flex:1 1 auto;min-width:104px}
 .badge{display:inline-block;font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px;margin-right:6px}
 .b-draft{background:var(--danger-bg);color:var(--danger)}
 .b-complete{background:var(--ok-bg);color:var(--ok)}
@@ -131,6 +136,24 @@ input[type=date]{min-height:var(--tap)}
   color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center}
 .ph .t{position:absolute;bottom:0;left:0;right:0;background:#000a;font-size:11px;padding:3px 5px;text-align:center}
 .ph.add{display:flex;align-items:center;justify-content:center;font-size:30px;border:1px dashed var(--line);color:var(--muted)}
+.ph .imgbtn{position:absolute;inset:0;width:100%;height:100%;background:none;border:none;padding:0;cursor:zoom-in}
+
+/* 照片全屏查看器（App 内与报告共用同一套交互） */
+#frlb{position:fixed;inset:0;z-index:200;background:rgba(10,14,30,.94);display:none;
+  align-items:center;justify-content:center;touch-action:none}
+#frlb.on{display:flex}
+#frlb .stage{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#frlbImg{max-width:100%;max-height:100%;object-fit:contain;transition:transform .18s ease-out}
+#frlb.zoomed #frlbImg{transform:scale(2.2)}
+#frlb .lbcnt{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom,0px));left:0;right:0;
+  text-align:center;color:#fff;font-size:14px;font-weight:600}
+#frlb .lbhint{position:absolute;bottom:calc(6px + env(safe-area-inset-bottom,0px));left:0;right:0;
+  text-align:center;color:rgba(255,255,255,.6);font-size:12px}
+.lbbtn{position:absolute;z-index:2;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.35);
+  border-radius:999px;width:46px;height:46px;font-size:24px;display:flex;align-items:center;justify-content:center}
+.lbclose{top:calc(12px + env(safe-area-inset-top,0px));right:14px}
+.lbprev{left:14px;top:50%;margin-top:-23px}
+.lbnext{right:14px;top:50%;margin-top:-23px}
 
 /* misc */
 .search{position:relative;margin-bottom:12px}
@@ -627,7 +650,7 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 "use strict";
 /* ============================ 常量 ============================ */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 
 /* 展会预设：只预填城市/场馆/展区，不限制品类，任何展会都能自建 */
 const FAIR_PRESETS = [
@@ -1085,6 +1108,7 @@ function galleryPrefix(supplierId){
   return slugify(nm) || "photo";
 }
 async function addPhoto(supplierId, file, type, opts){
+  if(!file || !file.size) throw new Error("没有有效的照片文件");
   /* 同步发起（不等结果），保住 iOS 需要的用户手势窗口 */
   const gTask = (opts && opts.gallery && SETTINGS.saveToGallery!==false)
     ? saveToGallery(file, galleryPrefix(supplierId)) : null;
@@ -1134,7 +1158,7 @@ async function refresh(){
   const inFair = (x)=>!fid || x.fairId===fid || (!x.fairId && !fid);
   SUPPLIERS=s.filter(x=>!x.deletedAt && inFair(x));
   PLANS=p.filter(x=>!x.deletedAt && inFair(x));
-  PHOTOS=ph.filter(inFair);
+  PHOTOS=ph.filter(x=>!x.deletedAt && inFair(x));
 }
 /* 切换当前展会 */
 async function selectFair(id){
@@ -1256,13 +1280,19 @@ async function addManualSupplier(){
 }
 
 /* ============================ 拍照秒存 ============================ */
+/* 相机被打开又取消时，部分安卓浏览器仍会触发 change 并给出一个空文件（0 字节）。
+   这种文件既不是照片也不能压缩，必须在这里拦掉，否则会白算一张照片。 */
+function usablePhotoFiles(list){
+  return (list||[]).filter(f=>f && f.size>0 && (!f.type || /^image\//i.test(f.type)));
+}
 function pickPhoto(cb, multiple){
   const inp = multiple ? $("#filePick") : $("#fileCam");
   inp.value="";
   inp.onchange = async ()=>{
-    const files = Array.from(inp.files||[]);
+    const files = usablePhotoFiles(Array.from(inp.files||[]));
     inp.value="";
     if(files.length) cb(files);
+    else toast("没有拍到照片，已取消", 2500);
   };
   inp.click();
 }
@@ -1274,7 +1304,10 @@ async function quickCapture(){
     try{
       await addPhoto(s.id, files[0], "booth", {gallery:true});
     }catch(e){
-      console.error(e); toast("照片保存失败："+e.message, 4000);
+      /* 没拍到 / 照片损坏：不要把一条空记录留在列表里 */
+      await del("suppliers", s.id);
+      console.error(e); toast("照片没保存成功，未创建记录："+e.message, 4000);
+      await refresh(); renderHome(); return;
     }
     await refresh();
     CUR=s.id;
@@ -1644,16 +1677,86 @@ async function save(s){
   const el=$("#savedAt"); if(el) el.textContent=hhmm(LAST_SAVED_AT);
   await refresh();
 }
+/* 照片全屏查看：点开看大图、双击再放大一倍、左右滑动切换、点空白处或 ✕ 关闭。
+   与导出的英文报告里的放大交互保持一致。srcs 为大图 URL 数组（与缩略图顺序一致）。 */
+let FRLB=null;
+function openLightbox(srcs, start){
+  const list=(srcs||[]).filter(Boolean);
+  if(!list.length) return;
+  if(!FRLB){
+    const d=document.createElement("div"); d.id="frlb";
+    d.innerHTML="<div class='stage' id='frlbStage'><img id='frlbImg' alt=''></div>"
+      +"<button class='lbbtn lbclose' id='frlbClose' aria-label='关闭'>✕</button>"
+      +"<button class='lbbtn lbprev' id='frlbPrev' aria-label='上一张'>‹</button>"
+      +"<button class='lbbtn lbnext' id='frlbNext' aria-label='下一张'>›</button>"
+      +"<div class='lbcnt' id='frlbCnt'></div>"
+      +"<div class='lbhint'>点空白关闭 · 双击放大 · 左右滑动切换</div>";
+    document.body.appendChild(d);
+    const im=d.querySelector("#frlbImg"), st=d.querySelector("#frlbStage"), cnt=d.querySelector("#frlbCnt");
+    let list0=[], idx=0, lastTap=0, sx=0, sy=0, moved=false, swiping=false;
+    const show=(i)=>{ idx=(i+list0.length)%list0.length; im.src=list0[idx];
+      d.classList.remove("zoomed"); cnt.textContent=(idx+1)+" / "+list0.length; };
+    FRLB={ el:d, setList:(a)=>{ list0=a; }, show:(i)=>show(i),
+      open:(i)=>{ show(i); d.classList.add("on"); }, close:()=>{ d.classList.remove("on"); d.classList.remove("zoomed"); } };
+    d.querySelector("#frlbClose").onclick=(e)=>{ e.stopPropagation(); FRLB.close(); };
+    d.querySelector("#frlbPrev").onclick=(e)=>{ e.stopPropagation(); show(idx-1); };
+    d.querySelector("#frlbNext").onclick=(e)=>{ e.stopPropagation(); show(idx+1); };
+    d.onclick=(e)=>{ if(e.target===d||e.target===st) FRLB.close(); };
+    d.addEventListener("pointerdown",(e)=>{ sx=e.clientX; sy=e.clientY; moved=false; swiping=true; });
+    d.addEventListener("pointermove",(e)=>{ if(!swiping) return;
+      if(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10) moved=true; });
+    let closeTimer=null;
+    d.addEventListener("pointerup",(e)=>{
+      swiping=false;
+      if(!moved){
+        const t=Date.now();
+        if(t-lastTap<320){                       /* 第二下：放大 / 还原 */
+          if(closeTimer){ clearTimeout(closeTimer); closeTimer=null; }
+          d.classList.toggle("zoomed"); lastTap=0; return;
+        }
+        /* 第一下先不关：留 300ms 给第二下，否则双击放大永远触发不到 */
+        lastTap=t;
+        const tgt=e.target;
+        if(closeTimer) clearTimeout(closeTimer);
+        closeTimer=setTimeout(()=>{ closeTimer=null; if(tgt===d||tgt===st) FRLB.close(); }, 300);
+        return;
+      }
+      if(closeTimer){ clearTimeout(closeTimer); closeTimer=null; }
+      const dx=e.clientX-sx, dy=e.clientY-sy;
+      if(Math.abs(dx)>45 && Math.abs(dx)>Math.abs(dy)) show(idx+(dx<0?1:-1));
+    });
+    document.addEventListener("keydown",(e)=>{
+      if(!d.classList.contains("on")) return;
+      if(e.key==="Escape") FRLB.close();
+      else if(e.key==="ArrowLeft") show(idx-1);
+      else if(e.key==="ArrowRight") show(idx+1);
+    });
+  }
+  FRLB.setList(list);
+  FRLB.open(Math.max(0, Math.min(start||0, list.length-1)));
+}
 function renderPhotos(s){
   const list=photosOf(s.id);
-  const urls=[];
-  const html = list.map(p=>{
+  const urls=[], bigUrls=[];
+  const html = list.map((p,i)=>{
     const u=URL.createObjectURL(p.thumbBlob||p.blob); urls.push(u);
-    return `<div class="ph"><img src="${u}" alt=""><div class="t">${labelOf(PHOTO_TYPES,p.type)}</div>
+    const b=URL.createObjectURL(p.blob); bigUrls.push(b);
+    return `<div class="ph"><img src="${u}" alt="">
+      <button class="imgbtn" data-i="${i}" aria-label="放大查看"></button>
+      <div class="t">${labelOf(PHOTO_TYPES,p.type)}</div>
       <button class="g" data-g="${p.id}" aria-label="存入系统相册" title="存入系统相册">⬇</button>
       <button class="x" data-p="${p.id}" aria-label="删除照片">✕</button></div>`;
   }).join("") + `<div class="ph add" id="phAdd">＋</div>`;
   const box=$("#editPhotos"); box.innerHTML=html;
+  box.querySelectorAll(".imgbtn").forEach(b=>{
+    /* 触屏上 click 有时会迟到甚至不合成，pointerup 兜底；guard 防止同一次点击开两次 */
+    let guard=false;
+    const go=()=>{ if(guard) return; guard=true; setTimeout(()=>{guard=false;},500);
+      openLightbox(bigUrls, Number(b.dataset.i||0)); };
+    b.addEventListener("click", go);
+    b.addEventListener("pointerup", (e)=>{ e.preventDefault(); go(); });
+    b.addEventListener("touchend", (e)=>{ e.preventDefault(); go(); });
+  });
   box.querySelectorAll(".g").forEach(b=>b.onclick=async()=>{
     const p=photosOf(s.id).find(x=>x.id===b.dataset.g);
     if(!p) return;
@@ -1673,7 +1776,7 @@ function renderPhotos(s){
     for(const f of files){ try{ await addPhoto(s.id, f, "product"); }catch(e){ toast("照片保存失败："+e.message,4000); } }
     await refresh(); renderPhotos(SUPPLIERS.find(x=>x.id===s.id)||s); renderEdit(s.id);
   }, true);
-  setTimeout(()=>urls.forEach(u=>URL.revokeObjectURL(u)), 60000);
+  setTimeout(()=>{ urls.forEach(u=>URL.revokeObjectURL(u)); bigUrls.forEach(u=>URL.revokeObjectURL(u)); }, 60000);
 }
 $("#btnDone").onclick=async()=>{
   const s=SUPPLIERS.find(x=>x.id===CUR);
@@ -1699,11 +1802,19 @@ $("#btnDelete").onclick=async()=>{
   const s=SUPPLIERS.find(x=>x.id===CUR); if(!s) return;
   if(!confirm("删除「"+(s.companyNameZh||s.companyNameEn||"未命名")+"」？删除后 10 秒内可撤销。")) return;
   const backup=JSON.parse(JSON.stringify({...s, photoIds:(s.photoIds||[]).slice()}));
+  /* 照片跟着一起下线，否则「本机 N 张照片」会大于报告里真的出现的数量 */
+  const myPhotos=(await all("photos")).filter(p=>!p.deletedAt
+    && (p.supplierId===s.id || (s.photoIds||[]).includes(p.id)));
+  for(const p of myPhotos){ p.deletedAt=now(); await put("photos", p); }
   s.deletedAt=now(); await put("suppliers", touch(s)); await refresh();
   toast("已删除", 10000);
   const btn=document.createElement("div");
   // 简易撤销：10 秒内点首页横幅恢复
-  const undo=async()=>{ backup.deletedAt=null; await put("suppliers", touch(backup)); await refresh(); toast("已恢复"); };
+  const undo=async()=>{
+    backup.deletedAt=null; await put("suppliers", touch(backup));
+    for(const p of myPhotos){ p.deletedAt=null; await put("photos", p); }
+    await refresh(); toast("已恢复");
+  };
   window.__undo=undo;
   setTimeout(()=>{ if(window.__undo===undo) window.__undo=null; }, 10000);
   go("list"); renderList();
@@ -1732,14 +1843,19 @@ async function renderPlans(){
   $("#planBody").innerHTML=items.map(p=>{
     const st = p.status==="visited" ? `<span class="badge b-complete">已到访</span>`
       : p.status==="skipped" ? `<span class="badge b-draft">跳过</span>` : `<span class="badge b-plan">${p.priority} 级</span>`;
-    return `<div class="item" data-p="${p.id}">
+    return `<div class="item plan-item" data-p="${p.id}">
       <div class="body">
         <div class="nm">${esc(p.companyName)}</div>
         <div class="meta">${esc([p.boothNo,p.goal].filter(Boolean).join(" · "))}</div>
         <div style="margin-top:5px">${st}</div>
       </div>
-      ${p.status==="planned"?`<button class="btn btn-sm btn-accent" data-a="arrive">到访拍照</button>`:""}
-      ${p.status==="planned"?`<button class="btn btn-sm" data-a="skip">跳过</button>`:""}
+      <div class="acts">
+        ${p.status==="planned"?`<button class="btn btn-sm btn-accent" data-a="arrive">到访拍照</button>`:""}
+        ${p.status==="planned"?`<button class="btn btn-sm" data-a="skip">跳过</button>`:""}
+        ${p.status==="skipped"?`<button class="btn btn-sm btn-accent" data-a="resume">继续参观</button>`:""}
+        ${p.status==="visited"?`<button class="btn btn-sm" data-a="open">查看记录</button>`:""}
+        <button class="btn btn-sm btn-danger" data-a="del">🗑 删除</button>
+      </div>
     </div>`;
   }).join("");
   $$("#planBody .item").forEach(el=>{
@@ -1747,9 +1863,29 @@ async function renderPlans(){
     el.onclick=()=>{ if(el.querySelector("[data-a]")) return; };
   });
 }
+function sidOfPlan(p){
+  return p.supplierId || (SUPPLIERS.find(s=>s.previsitId===p.id)||{}).id || null;
+}
 async function planAction(pid, act){
   const p=PLANS.find(x=>x.id===pid); if(!p) return;
   if(act==="skip"){ p.status="skipped"; p.updatedAt=now(); await put("visitPlans",p); await refresh(); renderPlans(); return; }
+  /* 跳过之后还能改主意：退回 planned，重新出现「到访拍照」 */
+  if(act==="resume"){ p.status="planned"; p.updatedAt=now(); await put("visitPlans",p); await refresh(); renderPlans(); toast("已放回待参观"); return; }
+  if(act==="open"){
+    const sid=p.supplierId || (SUPPLIERS.find(s=>s.previsitId===p.id)||{}).id;
+    if(sid){ CUR=sid; go("edit",{title:p.companyName, sub:"预拜访记录", back:true}); renderEdit(sid); }
+    else toast("这条还没有对应记录", 2500);
+    return;
+  }
+  if(act==="del"){
+    const has=sidOfPlan(p);
+    if(!confirm("从预拜访清单删除「"+p.companyName+"」？"
+      + (has?"\n（已录入的厂家记录不会删除）":""))) return;
+    p.deletedAt=now(); p.updatedAt=now();
+    await put("visitPlans", p); await refresh(); renderPlans();
+    toast("已从清单删除（其他设备同步后会一起删）", 3500);
+    return;
+  }
   // 到达并拍照：先查重
   const dup=SUPPLIERS.find(s=>s.companyKey===p.companyKey && s.boothKey===normBooth(p.boothNo));
   if(dup){
@@ -1763,7 +1899,13 @@ async function planAction(pid, act){
       boothNo:p.boothNo, hall:fairHall(), area:fairArea() });
     if(p.goal) s.notes="拜访目的："+p.goal;
     await put("suppliers", s);
-    try{ await addPhoto(s.id, files[0], "booth", {gallery:true}); }catch(e){ toast("照片保存失败："+e.message,4000); }
+    try{
+      await addPhoto(s.id, files[0], "booth", {gallery:true});
+    }catch(e){
+      await del("suppliers", s.id);
+      toast("照片没保存成功，厂家仍留在预拜访清单里", 4000);
+      await refresh(); renderPlans(); PENDING_PLAN=null; return;
+    }
     p.status="visited"; p.supplierId=s.id; p.updatedAt=now();
     await put("visitPlans", p);
     await refresh(); CUR=s.id; PENDING_PLAN=null;
@@ -1799,13 +1941,16 @@ async function buildBundle(mode){
     : SUPPLIERS.slice();
   // 墓碑（删除记录）也要带出，保证电脑端幂等合并
   const tombs = await all("suppliers").then(a=>a.filter(s=>s.deletedAt && (mode!=="today" || new Date(s.deletedAt)>=cutoff)));
+  // 预拜访清单的删除也要当墓碑带出去，别的设备才会一起删
+  const planTombs = await all("visitPlans").then(a=>a.filter(p=>p.deletedAt && (mode!=="today" || new Date(p.deletedAt)>=cutoff)));
   const ids = new Set(sup.map(s=>s.id));
   const photos = PHOTOS.filter(p=>ids.has(p.supplierId));
   const f=FAIR || newFair({name:"（未命名展会）"});
   const bundle={
     schemaVersion:SCHEMA_VERSION,
     export:{ id:uid(), deviceId:SETTINGS.deviceId, createdAt:now(), mode,
-      appVersion:APP_VERSION, counts:{suppliers:sup.length, photos:photos.length, plans:PLANS.length, tombstones:tombs.length},
+      appVersion:APP_VERSION, counts:{suppliers:sup.length, photos:photos.length, plans:PLANS.length,
+        tombstones:tombs.length + planTombs.length},
       weights:SETTINGS.weights },
     fair: { id:f.id, name:f.name, nameEn:f.nameEn, phase:f.phase, city:f.city, venue:f.venue,
             area:f.area, startDate:f.startDate, endDate:f.endDate, slug:fairSlug(f) },
@@ -1813,7 +1958,7 @@ async function buildBundle(mode){
       dates:[f.startDate, f.endDate].filter(Boolean).join("..") || "",
       venue:[f.city, f.venue].filter(Boolean).join(" · ") },
     suppliers: sup.concat(tombs),
-    visitPlans: PLANS.slice(),
+    visitPlans: PLANS.slice().concat(planTombs),
     photos: photos.map(p=>({ id:p.id, supplierId:p.supplierId, type:p.type,
       path:"photos/"+p.supplierId+"/"+p.id+".jpg", sha256:p.sha256, size:p.size, createdAt:p.createdAt }))
   };
