@@ -232,31 +232,106 @@ def write_comparison_xlsx(ctx: F.Context, path: Path) -> None:
 # --------------------------------------------------------------------------- #
 # HTML report
 # --------------------------------------------------------------------------- #
+# Schulte 品牌配色：深蓝 #1F1FAF + 白 + 浅蓝灰底纹（与 app/report.js 保持一致）
 CSS = """
-:root{--bg:#0f1524;--card:#162034;--line:#26334d;--txt:#e8eef7;--mut:#93a3bc;--acc:#22d3a6}
+:root{--bg:#F5F6FA;--card:#FFFFFF;--line:#D5DAEC;--txt:#101529;--mut:#5C6480;--acc:#1F1FAF;
+ --soft:#EEF0FC;--soft2:#F5F6FA}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--txt);
- font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,"PingFang SC",sans-serif}
+ font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,"PingFang SC",sans-serif;
+ -webkit-text-size-adjust:100%}
 .wrap{max-width:1000px;margin:0 auto;padding:32px 24px 80px}
-h1{font-size:28px;margin:0 0 6px}
+h1{font-size:28px;margin:0 0 6px;color:var(--acc);letter-spacing:-.3px}
 h2{font-size:21px;margin:38px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--acc)}
 h3{font-size:17px;margin:22px 0 8px}
 .sub{color:var(--mut);font-size:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
 table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
 th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
-th{background:#123a5e;color:#fff;font-weight:600}
+th{background:var(--acc);color:#fff;font-weight:600}
+tbody tr:nth-child(even) td{background:var(--soft2)}
 .kv{display:flex;gap:12px;padding:5px 0;border-bottom:1px solid var(--line);font-size:14px}
 .kv .k{color:var(--mut);min-width:170px;flex:0 0 auto}
 .grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
-.grid img{width:180px;height:135px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.grid img{width:240px;height:180px;object-fit:cover;border-radius:10px;border:1px solid var(--line);
+ cursor:zoom-in;background:var(--soft2)}
 .badge{display:inline-block;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;margin-right:6px}
-.b-short{background:#0f3328;color:#7ff2d0}.b-follow{background:#123a5e;color:#9ecdff}
-.b-res{background:#332a0d;color:#ffd591}.b-low{background:#3a1620;color:#ffb3c0}
-.b-draft{background:#3a1620;color:#ffb3c0}
-.warn{background:#3a2a0d;border:1px solid #6b4d12;color:#ffd591;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:14px}
+.b-short{background:#E6F6EE;color:#0F6B45}.b-follow{background:var(--soft);color:var(--acc)}
+.b-res{background:#FFF7E6;color:#8A5300}.b-low{background:#FDECEC;color:#B3261E}
+.b-draft{background:#FDECEC;color:#B3261E}
+.warn{background:#FFF7E6;border:1px solid #F2D194;color:#8A5300;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:14px}
 .mut{color:var(--mut)}.small{font-size:13px}
-@media print{body{background:#fff;color:#000}.card{border-color:#bbb}th{background:#dde6f2;color:#000}}
+#lb{position:fixed;inset:0;z-index:300;background:rgba(10,14,30,.94);display:none;
+ align-items:center;justify-content:center;touch-action:none}
+#lb.on{display:flex}
+#lb .stage{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#lbImg{max-width:100%;max-height:100%;object-fit:contain;transition:transform .18s ease-out;will-change:transform}
+#lb.zoomed #lbImg{transform:scale(2.2)}
+.lbbtn{position:absolute;z-index:2;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.35);
+ border-radius:999px;width:46px;height:46px;font-size:24px;display:flex;align-items:center;justify-content:center}
+.lbclose{top:calc(12px + env(safe-area-inset-top,0px));right:14px}
+.lbprev{left:14px;top:50%;margin-top:-23px}
+.lbnext{right:14px;top:50%;margin-top:-23px}
+.lbcount{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;
+ color:#fff;font-size:14px;font-weight:600}
+.lbhint{position:absolute;bottom:calc(6px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;
+ color:rgba(255,255,255,.6);font-size:12px}
+@media (max-width:420px){.grid img{width:160px;height:120px}.lbbtn{width:42px;height:42px;font-size:22px}}
+@media print{body{background:#fff;color:#000}.card{border-color:#bbb}th{background:#E8EAF7;color:#000}
+ #lb{display:none}}
+"""
+
+# 照片点开看大图：双击放大、左右滑动切换、点空白处关闭（与 app/report.js 同一份逻辑）
+LIGHTBOX_JS = """
+(function(){
+  var imgs=[].slice.call(document.querySelectorAll('.grid img'));
+  if(!imgs.length) return;
+  var idx=0, lastTap=0, sx=0, sy=0, moved=false, swiping=false;
+  var lb=document.createElement('div'); lb.id='lb';
+  lb.innerHTML="<div class='stage' id='lbStage'><img id='lbImg' alt=''>"+
+    "<button class='lbbtn lbprev' aria-label='Previous'>\\u2039</button>"+
+    "<button class='lbbtn lbnext' aria-label='Next'>\\u203a</button>"+
+    "<button class='lbbtn lbclose' aria-label='Close'>\\u2715</button>"+
+    "<div class='lbcount'></div><div class='lbhint'>Tap to close · double-tap to zoom · swipe for next</div></div>";
+  document.body.appendChild(lb);
+  var im=document.getElementById('lbImg'), cnt=lb.querySelector('.lbcount'),
+      stage=document.getElementById('lbStage');
+  function show(i){
+    idx=(i+imgs.length)%imgs.length;
+    im.src=imgs[idx].getAttribute('src');
+    lb.classList.remove('zoomed');
+    cnt.textContent=(idx+1)+' / '+imgs.length;
+  }
+  function open(i){ show(i); lb.classList.add('on'); }
+  function close(){ lb.classList.remove('on'); lb.classList.remove('zoomed'); }
+  imgs.forEach(function(el,k){ el.addEventListener('click',function(){ open(k); }); });
+  lb.querySelector('.lbclose').addEventListener('click',function(e){ e.stopPropagation(); close(); });
+  lb.querySelector('.lbprev').addEventListener('click',function(e){ e.stopPropagation(); show(idx-1); });
+  lb.querySelector('.lbnext').addEventListener('click',function(e){ e.stopPropagation(); show(idx+1); });
+  lb.addEventListener('click',function(e){ if(e.target===lb||e.target===stage){ close(); } });
+  document.addEventListener('keydown',function(e){
+    if(!lb.classList.contains('on')) return;
+    if(e.key==='Escape') close();
+    else if(e.key==='ArrowLeft') show(idx-1);
+    else if(e.key==='ArrowRight') show(idx+1);
+  });
+  lb.addEventListener('pointerdown',function(e){ sx=e.clientX; sy=e.clientY; moved=false; swiping=true; });
+  lb.addEventListener('pointermove',function(e){
+    if(!swiping) return;
+    if(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10) moved=true;
+  });
+  lb.addEventListener('pointerup',function(e){
+    swiping=false;
+    if(!moved){
+      var now=Date.now();
+      if(now-lastTap<320){ lb.classList.toggle('zoomed'); lastTap=0; }
+      else { lastTap=now; if(e.target===lb||e.target===stage) close(); }
+      return;
+    }
+    var dx=e.clientX-sx, dy=e.clientY-sy;
+    if(Math.abs(dx)>45 && Math.abs(dx)>Math.abs(dy)) show(idx+(dx<0?1:-1));
+  });
+})();
 """
 
 
@@ -465,7 +540,7 @@ def write_html(ctx: F.Context, path: Path) -> None:
     h.append("<p class='small mut' style='margin-top:40px'>Generated by FairRecorder from on-site mobile "
              "records. Scores reflect field observations recorded at the fair and are not a substitute for "
              "factory audit or certificate verification.</p>")
-    h.append("</div></body></html>")
+    h.append("</div><script>" + LIGHTBOX_JS + "</script></body></html>")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(h), encoding="utf-8")
 
