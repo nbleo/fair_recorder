@@ -115,6 +115,8 @@ input[type=date]{min-height:var(--tap)}
 .ph img{width:100%;height:100%;object-fit:cover;display:block}
 .ph .x{position:absolute;top:4px;right:4px;width:30px;height:30px;border-radius:8px;background:#000a;
   color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center}
+.ph .g{position:absolute;top:4px;right:38px;width:30px;height:30px;border-radius:8px;background:#000a;
+  color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center}
 .ph .t{position:absolute;bottom:0;left:0;right:0;background:#000a;font-size:11px;padding:3px 5px;text-align:center}
 .ph.add{display:flex;align-items:center;justify-content:center;font-size:30px;border:1px dashed var(--line);color:var(--muted)}
 
@@ -512,6 +514,18 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
   </div>
   <div class="sec">展会默认值</div>
   <div class="field"><label>默认展馆</label><select id="setHall"></select></div>
+  <div class="sec">照片与系统相册</div>
+  <div class="field"><label>用相机拍完自动存一份到系统相册</label>
+    <div class="chips" id="setGallery">
+      <button class="chip" data-v="on">开（推荐）</button>
+      <button class="chip" data-v="off">关</button>
+    </div>
+    <div class="tiny muted" style="margin-top:6px">
+      网页不能自己写进相册，只能：<b>苹果</b>拍完自动弹系统分享面板，选一次「存储到照片」即进相册；
+      <b>安卓 / 电脑</b>静默存到「下载」目录，相册里通常直接可见。<br>
+      从相册里选的照片不会重复保存。任何时候都能在照片右上角点 <b>⬇</b> 单独存一张。
+    </div>
+  </div>
   <div class="sec">评分权重（合计须为 100%）</div>
   <div class="field"><label>快速套用</label>
     <div class="chips" id="setWPreset">
@@ -553,7 +567,7 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 "use strict";
 /* ============================ 常量 ============================ */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 
 /* 展会预设：只预填城市/场馆/展区，不限制品类，任何展会都能自建 */
 const FAIR_PRESETS = [
@@ -950,7 +964,74 @@ async function compress(file, maxSide, quality){
   if(bmp.close) bmp.close();
   return await new Promise(r=>c.toBlob(r,"image/jpeg",quality));
 }
-async function addPhoto(supplierId, file, type){
+/* ---------- 把照片存进系统相册 ----------
+   网页不能直接写相册（iOS / Android 都不允许），只有两条路：
+   · iOS：弹系统分享面板，用户点一次「存储到照片」即进相册 —— 必须在用户手势内发起
+   · 其它（Android / 桌面）：静默下载到「下载」目录，系统「相册 / 图库」里一般能直接看到
+   因此相机拍的照片（系统相册里根本没有）会自动存一份；从相册里选的不再重复存。 */
+function isIOS(){
+  const ua=navigator.userAgent||"";
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform==="MacIntel" && (navigator.maxTouchPoints||0)>1);
+}
+function imgExt(blob){
+  const t=(blob&&blob.type)||"";
+  if(/png/.test(t)) return ".png";
+  if(/webp/.test(t)) return ".webp";
+  if(/heic|heif/.test(t)) return ".heic";
+  return ".jpg";
+}
+function photoFileName(prefix, blob){
+  const d=new Date(), p2=n=>String(n).padStart(2,"0");
+  const stamp=d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+"-"+p2(d.getHours())+p2(d.getMinutes())+p2(d.getSeconds());
+  const base=((prefix?prefix+"-":"")+"FR-"+stamp).replace(/[\\/:*?"<>|]+/g,"_").slice(0,80);
+  return base+imgExt(blob);
+}
+function toFile(blob, name){
+  /* 总是重建：相机给的原名（IMG_1234.jpg）对归档没意义，统一成 FR-…时间戳 */
+  try{ return new File([blob], name, {type:blob.type||"image/jpeg"}); }
+  catch(e){ return blob; }
+}
+/* 返回 saved / cancelled / failed */
+async function saveToGallery(blob, prefix){
+  if(!blob) return "failed";
+  const name=photoFileName(prefix, blob);
+  const file=toFile(blob, name);
+  if(isIOS()){
+    try{
+      if(!navigator.canShare || !navigator.canShare({files:[file]})) return "failed";
+      await Promise.race([
+        navigator.share({files:[file], title:"展会照片"}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error("share timeout")),45000))
+      ]);
+      return "saved";
+    }catch(e){
+      if(e && (e.name==="AbortError" || /cancel/i.test(String(e.message)))) return "cancelled";
+      console.warn("share failed", e);
+      return "failed";
+    }
+  }
+  try{
+    const url=URL.createObjectURL(file);
+    const a=document.createElement("a");
+    a.href=url; a.download=name; a.rel="noopener"; a.style.display="none";
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ a.remove(); URL.revokeObjectURL(url); }, 30000);
+    return "saved";
+  }catch(e){ console.warn("download failed", e); return "failed"; }
+}
+function galleryPrefix(supplierId){
+  const s=(SUPPLIERS||[]).find(x=>x.id===supplierId) || null;
+  const nm=(s && (s.companyNameEn || s.companyNameZh)) || (FAIR && (FAIR.nameEn || FAIR.name)) || "";
+  return slugify(nm) || "photo";
+}
+async function addPhoto(supplierId, file, type, opts){
+  /* 同步发起（不等结果），保住 iOS 需要的用户手势窗口 */
+  const gTask = (opts && opts.gallery && SETTINGS.saveToGallery!==false)
+    ? saveToGallery(file, galleryPrefix(supplierId)) : null;
+  if(gTask) gTask.then(r=>{
+    if(r==="saved") toast("照片已存入系统相册", 2500);
+    else if(r==="failed") toast("没能自动存入相册，可在照片上点 ⬇ 手动保存", 5000);
+  }, ()=>{});
   const big = (type==="namecard"||type==="certificate") ? await compress(file,2000,0.82) : await compress(file,1600,0.78);
   const thumb = await compress(file,320,0.7);
   const p={ id:uid(), fairId:curFairId(), supplierId, type:type||"product", blob:big, thumbBlob:thumb,
@@ -962,7 +1043,7 @@ async function addPhoto(supplierId, file, type){
 }
 
 /* ============================ 全局状态 ============================ */
-let SETTINGS={weights:Object.assign({},DEFAULT_WEIGHTS), defaultHall:"A区", deviceId:null, lastExportAt:null};
+let SETTINGS={weights:Object.assign({},DEFAULT_WEIGHTS), defaultHall:"A区", deviceId:null, lastExportAt:null, saveToGallery:true};
 let SUPPLIERS=[], PLANS=[], PHOTOS=[], FAIRS=[];
 let FAIR=null;              // 当前展会（null = 未选择）
 let CUR=null;              // 正在编辑的 supplier id
@@ -975,6 +1056,7 @@ async function loadSettings(){
   SETTINGS.weights = w && SCORE_DIMS.every(d=>typeof w[d[0]]==="number") ? w : Object.assign({},DEFAULT_WEIGHTS);
   SETTINGS.defaultHall = await getKV("defaultHall","A区");
   SETTINGS.lastExportAt = await getKV("lastExportAt", null);
+  SETTINGS.saveToGallery = await getKV("saveToGallery", true);
   SETTINGS.deviceId = await getKV("deviceId", null);
   if(!SETTINGS.deviceId){ SETTINGS.deviceId=uid(); await setKV("deviceId", SETTINGS.deviceId); }
 }
@@ -1130,7 +1212,7 @@ async function quickCapture(){
     const s=newSupplier({hall:fairHall(), area:fairArea()});
     await put("suppliers", s);
     try{
-      await addPhoto(s.id, files[0], "booth");
+      await addPhoto(s.id, files[0], "booth", {gallery:true});
     }catch(e){
       console.error(e); toast("照片保存失败："+e.message, 4000);
     }
@@ -1508,9 +1590,17 @@ function renderPhotos(s){
   const html = list.map(p=>{
     const u=URL.createObjectURL(p.thumbBlob||p.blob); urls.push(u);
     return `<div class="ph"><img src="${u}" alt=""><div class="t">${labelOf(PHOTO_TYPES,p.type)}</div>
+      <button class="g" data-g="${p.id}" aria-label="存入系统相册" title="存入系统相册">⬇</button>
       <button class="x" data-p="${p.id}" aria-label="删除照片">✕</button></div>`;
   }).join("") + `<div class="ph add" id="phAdd">＋</div>`;
   const box=$("#editPhotos"); box.innerHTML=html;
+  box.querySelectorAll(".g").forEach(b=>b.onclick=async()=>{
+    const p=photosOf(s.id).find(x=>x.id===b.dataset.g);
+    if(!p) return;
+    const r=await saveToGallery(p.blob, galleryPrefix(s.id));
+    if(r==="saved") toast("已存入系统相册", 3000);
+    else if(r==="failed") toast("这台设备不支持自动存相册，可长按图片保存", 4000);
+  });
   box.querySelectorAll(".x").forEach(b=>b.onclick=async()=>{
     const pid=b.dataset.p;
     await del("photos", pid);
@@ -1598,7 +1688,7 @@ async function planAction(pid, act){
       boothNo:p.boothNo, hall:fairHall(), area:fairArea() });
     if(p.goal) s.notes="拜访目的："+p.goal;
     await put("suppliers", s);
-    try{ await addPhoto(s.id, files[0], "booth"); }catch(e){ toast("照片保存失败："+e.message,4000); }
+    try{ await addPhoto(s.id, files[0], "booth", {gallery:true}); }catch(e){ toast("照片保存失败："+e.message,4000); }
     p.status="visited"; p.supplierId=s.id; p.updatedAt=now();
     await put("visitPlans", p);
     await refresh(); CUR=s.id; PENDING_PLAN=null;
@@ -1853,6 +1943,16 @@ async function renderSettings(){
   $("#setFairDates").textContent = FAIR ? ([FAIR.startDate,FAIR.endDate].filter(Boolean).join(" → ")||"—") : "—";
   $("#setHall").innerHTML=HALLS.map(h=>`<option value="${esc(h)}" ${SETTINGS.defaultHall===h?"selected":""}>${esc(h)}</option>`).join("");
   $("#setHall").onchange=async()=>{ SETTINGS.defaultHall=$("#setHall").value; await setKV("defaultHall", SETTINGS.defaultHall); };
+  const gv = SETTINGS.saveToGallery===false ? "off" : "on";
+  $$("#setGallery .chip").forEach(b=>{
+    b.setAttribute("aria-pressed", String(b.dataset.v===gv));
+    b.onclick=async()=>{
+      SETTINGS.saveToGallery = b.dataset.v!=="off";
+      await setKV("saveToGallery", SETTINGS.saveToGallery);
+      $$("#setGallery .chip").forEach(x=>x.setAttribute("aria-pressed", String(x===b)));
+      toast(SETTINGS.saveToGallery ? "拍照后会自动存入系统相册" : "已关闭自动存相册，仍可点 ⬇ 手动保存", 3000);
+    };
+  });
   const w=SETTINGS.weights;
   $("#setWeights").innerHTML=SCORE_DIMS.map(d=>`<div class="score-row">
       <span class="lbl">${d[1]}</span>
@@ -1893,6 +1993,7 @@ async function renderSettings(){
 window.FR={
   db, get, put, all, del, getKV, setKV, refresh, buildBundle, toast, uid, now, compress, sha256Hex,
   newSupplier, go, pendingChanges, selectFair, curFairId, fairSlug,
+  saveToGallery, isIOS, photoFileName, galleryPrefix,
   /* 点击反馈：需要手动标记长操作时用 busy(el, promise) */
   busy: FRFX.busy, press: FRFX.press,
   /* 展会删除：UI 走 deleteFairFlow（三重确认）；sync.js 收到云端墓碑时调 deleteFairLocal */
