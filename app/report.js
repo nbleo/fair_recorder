@@ -115,7 +115,7 @@
       || (a._company < b._company ? -1 : 1));
     const picks = rated.slice(0, topN);
 
-    /* photos: only for suppliers in scope, at most 3 each */
+    /* photos: only for suppliers in scope — no cap, every photo is embedded */
     const photoIndex = {};
     if (withPhotos) {
       const bySup = {};
@@ -124,7 +124,7 @@
         (bySup[p.supplierId] = bySup[p.supplierId] || []).push(p);
       }
       for (const s of suppliers) {
-        const list = (bySup[s.id] || []).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)).slice(0, 3);
+        const list = (bySup[s.id] || []).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
         if (!list.length) continue;
         const out = [];
         for (const p of list) {

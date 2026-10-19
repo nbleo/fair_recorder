@@ -19,6 +19,7 @@ SCHEMA_VERSION = 2
 # (code, zh_label, en_label)
 CATEGORIES = [
     ("shower_enclosure", "淋浴房整体", "Shower Enclosure"),
+    ("smart_toilet", "智能马桶", "Smart Toilet"),
     ("tempered_glass", "钢化玻璃", "Tempered Glass"),
     ("aluminium_profile", "铝型材", "Aluminium Profile"),
     ("hardware", "五金配件", "Hardware & Fittings"),

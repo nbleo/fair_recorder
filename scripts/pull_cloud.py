@@ -168,6 +168,10 @@ def pull_fair(owner: str, repo: str, branch: str, token: str, root: str, user: s
     meta = parse_meta(blob(owner, repo, meta_entry["sha"], token))
     if meta.get("layout") == "per-fair/v1":                      # legacy single-file
         raise Fail(f"{base} uses the legacy layout; pull it from the phone export instead")
+    # 墓碑：这个展会在手机上被删了，云端只留一条空 meta。别再拉回来出报告。
+    if (meta.get("fair") or {}).get("deletedAt") or meta.get("deleted"):
+        raise Fail(f"{fair_id} was deleted in the app (tombstone "
+                   f"{(meta.get('fair') or {}).get('deletedAt')}) — skipped")
 
     key = None
     if meta.get("encrypted"):

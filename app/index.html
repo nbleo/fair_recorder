@@ -216,7 +216,10 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
   </div>
   <div id="fAdvanced" class="hide" style="margin-top:18px">
     <div class="sec">危险操作</div>
-    <button class="btn btn-danger" id="fArchive">归档此展会（不再显示在主列表）</button>
+    <button class="btn btn-danger" id="fArchive" style="margin-bottom:10px">归档此展会（不再显示在主列表）</button>
+    <button class="btn btn-danger" id="fDelete">🗑 彻底删除此展会（本机 + 其他设备）</button>
+    <div class="tiny muted" style="margin-top:8px">删除需要三重确认（含手输展会名），并会向云端写入墓碑；
+      其他设备下次同步后，这个展会连同它的记录也会一起删掉。删除前建议先导出一份 ZIP。</div>
   </div>
 </section>
 
@@ -473,7 +476,7 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
   <div class="sec">照片</div>
   <div class="card">
     <div class="chips" id="rpPhoto">
-      <button class="chip" data-photo="1">含照片（每家最多 3 张）</button>
+      <button class="chip" data-photo="1">含照片（不限张数，文件会变大）</button>
       <button class="chip" data-photo="0">不含照片（体积小、速度快）</button>
     </div>
   </div>
@@ -550,7 +553,7 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 "use strict";
 /* ============================ 常量 ============================ */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 
 /* 展会预设：只预填城市/场馆/展区，不限制品类，任何展会都能自建 */
 const FAIR_PRESETS = [
@@ -568,6 +571,7 @@ const AREAS = ["卫浴设备","建筑装饰材料","家居用品","玻璃工艺�
 const TITLES = ["","Sales 销售","Manager 经理","Owner 负责人","Engineer 工程师","Director 总监","其他"];
 const CATEGORIES = [
   ["shower_enclosure","淋浴房整体","Shower Enclosure"],
+  ["smart_toilet","智能马桶","Smart Toilet"],
   ["tempered_glass","钢化玻璃","Tempered Glass"],
   ["aluminium_profile","铝型材","Aluminium Profile"],
   ["hardware","五金配件","Hardware & Fittings"],
@@ -629,22 +633,9 @@ const FIELDS = [
     {k:"productDetails",label:"产品描述 / 亮点",type:"textarea"},
     {k:"models",label:"型号",type:"text"}
   ]},
-  {sec:"商务条件", items:[
-    {k:"moqValue",label:"MOQ 数量",type:"number"},
-    {k:"moqUnit",label:"MOQ 单位",type:"select",opts:MOQ_UNITS},
-    {k:"moqNote",label:"MOQ 备注",type:"text"},
-    {k:"priceMin",label:"价格下限",type:"number"},
-    {k:"priceMax",label:"价格上限",type:"number"},
-    {k:"currency",label:"币种",type:"chips1",opts:CURRENCIES},
-    {k:"priceUnit",label:"计价单位（如 set / pcs / m²）",type:"text"},
-    {k:"incoterm",label:"Incoterm",type:"chips1",opts:INCOTERMS},
-    {k:"priceBasis",label:"价格口径备注",type:"text"},
-    {k:"leadTimeDays",label:"交货期（天）",type:"number"},
-    {k:"capacityValue",label:"产能",type:"number"},
-    {k:"capacityUnit",label:"产能单位",type:"select",opts:CAP_UNITS},
-    {k:"exportMarkets",label:"出口市场（可多选）",type:"chips",opts:MARKETS},
-    {k:"euGermanyExperience",label:"欧盟 / 德国客户经验",type:"chips1",opts:["Yes","No","Unknown"]}
-  ]},
+  /* 「商务条件」板块已于 v1.3 从录入页移除：现场谈不清 MOQ / 价格 / 交期，
+     硬填只会得到一堆假数据。旧记录里的这些字段仍然保留，报告照常读出。
+     真要补，回电脑端导出后由总部补进 Excel。 */
   {sec:"跟进", items:[
     {k:"followUpStatus",label:"跟进状态",type:"chips1",opts:FOLLOWUPS},
     {k:"nextAction",label:"下一步动作",type:"textarea"},
@@ -1176,6 +1167,7 @@ async function renderFairs(){
         <div class="meta">${esc([fairDateLabel(f), f.city, f.phase].filter(Boolean).join(" · "))}</div>
         <div class="meta">${n} 家 · ${pl} 条计划 · ${ph} 张照片${f.lastPushAt?" · 已备份":""}</div>
       </div>
+      <button class="btn btn-sm btn-danger" data-del="${f.id}" aria-label="删除展会">🗑</button>
     </div>`;
   }).join("");
 
@@ -1187,6 +1179,8 @@ async function renderFairs(){
 
   $$("#fairBody .item").forEach(el=>{
     el.onclick=()=>{ openFair(el.dataset.f); };
+    const db=el.querySelector("[data-del]");
+    if(db) db.onclick=(e)=>{ e.stopPropagation(); deleteFairFlow(db.dataset.del); };
   });
 }
 async function openFair(id){
@@ -1211,6 +1205,83 @@ $("#fArchive").onclick=async()=>{
   await put("fairs", touchFair(EDIT_FAIR));
   if(FAIR && FAIR.id===EDIT_FAIR.id){ FAIR=null; await setKV("currentFairId", null); }
   await refresh(); toast("已归档"); go("fairs");
+};
+
+/* ============================ 彻底删除展会 ============================
+   建错了展会名、建重了、手滑建了一个空展会——这些都得能删。
+   难点在"多端"：本机删了，别的设备下次同步时还得跟着删，否则删了等于没删。
+   做法是给展会打 deletedAt 墓碑并推到云端（meta.fair.deletedAt），
+   其他设备 pull / pullFair 读到墓碑就在本地执行同一个删除动作。
+   记录与计划同样打墓碑（要靠 supplier 分块把删除带上去）；
+   照片体积大，本机直接物理删除立刻还空间。 */
+async function fairStats(id){
+  const [ss,pp,phs]=await Promise.all([all("suppliers"),all("visitPlans"),all("photos")]);
+  return {
+    suppliers: ss.filter(x=>x.fairId===id && !x.deletedAt).length,
+    plans: pp.filter(x=>x.fairId===id && !x.deletedAt).length,
+    photos: phs.filter(x=>x.fairId===id).length,
+  };
+}
+/* 无确认的真正删除：UI 流程与 sync.js（收到云端墓碑时）都调它 */
+async function deleteFairLocal(id, ts){
+  const f=await get("fairs", id);
+  if(!f) return {deleted:false, suppliers:0, plans:0, photos:0};
+  const t=ts||now();
+  const [ss,pp,phs]=await Promise.all([all("suppliers"),all("visitPlans"),all("photos")]);
+  let ns=0,nv=0,np=0;
+  for(const s of ss){ if(s.fairId!==id || s.deletedAt) continue; s.deletedAt=t; await put("suppliers", touch(s)); ns++; }
+  for(const p of pp){ if(p.fairId!==id || p.deletedAt) continue; p.deletedAt=t; await put("visitPlans", touch(p)); nv++; }
+  for(const p of phs){
+    if(p.fairId!==id) continue;
+    await del("photos", p.id); np++;            // 物理删除，立刻释放空间
+  }
+  f.deletedAt=t; await put("fairs", touchFair(f));
+  if(FAIR && FAIR.id===id){ FAIR=null; await setKV("currentFairId", null); }
+  await refresh();
+  return {deleted:true, id, name:f.name||f.nameEn||"（未命名）", suppliers:ns, plans:nv, photos:np};
+}
+/* 三重确认：确认后果 → 手输展会名 → 确认多端删除 */
+async function deleteFairFlow(id){
+  const f=(await all("fairs")).find(x=>x.id===id);
+  if(!f) return;
+  const st=await fairStats(id);
+  const nm=String(f.name||f.nameEn||"（未命名）");
+  if(!confirm("①／③ 确认删除展会「"+nm+"」？\n\n"
+    + "本机将一并删除 "+st.suppliers+" 条记录、"+st.plans+" 条计划、"+st.photos+" 张照片。\n"
+    + "照片会被物理删除，无法恢复。\n\n建议先到「导出与恢复」留一份 ZIP。\n\n确定继续？")) return;
+  const typed=prompt("②／③ 请输入展会全称以确认删除：\n\n"+nm);
+  if(typed==null) return;
+  if(String(typed).trim()!==nm){ toast("名称不一致，已取消删除", 4000); return; }
+  if(!confirm("③／③ 最后确认：删除后会在云端写入墓碑，其他设备下次拉取 / 双向同步时，"
+    + "这个展会连同它的记录也会一起删掉（那些设备上尚未上传的新记录同样会消失）。\n\n"
+    + "确定彻底删除「"+nm+"」？")) return;
+  const r=await deleteFairLocal(id);
+  let msg="已删除「"+nm+"」："+r.suppliers+" 条记录 / "+r.photos+" 张照片";
+  /* 墓碑必须推上去，别的设备才删得掉。
+     注意不能用 FRSync.ready() 判断——它要求"当前有选中展会"，而刚删完的那一瞬间
+     FAIR 必然是 null，会误判成未配置而跳过上传。直接调 pushTombstone，
+     没配置时它会自己抛"请先填写"。 */
+  try{
+    if(window.FRSync && window.FRSync.pushTombstone){
+      await window.FRSync.pushTombstone(id);
+      msg+="；云端墓碑已上传，其他设备同步后会一并删除";
+    }else{
+      msg+="；云备份未配置，其他设备不会自动删除";
+    }
+  }catch(e){
+    msg += /请先填写/.test(e.message)
+      ? "；云备份未配置，其他设备不会自动删除"
+      : "；云端墓碑上传失败（"+e.message+"），请到云备份页手动备份一次";
+  }
+  await refresh();
+  const next=FAIRS.filter(x=>!x.archived)[0];
+  if(next) await selectFair(next.id);
+  toast(msg, 6000);
+  go("fairs");
+}
+$("#fDelete").onclick=async()=>{
+  if(!EDIT_FAIR) return;
+  await deleteFairFlow(EDIT_FAIR.id);
 };
 let EDIT_FAIR=null;
 function renderFairNew(){
@@ -1330,15 +1401,10 @@ function renderEdit(id){
     f+=`<div class="sec">${sec.sec}</div>`;
     for(const it of sec.items) f+=renderField(s, it);
   }
-  f+=`<div class="sec">合规资质（区分"声称"与"已取得"）</div>`;
-  for(const c of COMPLIANCE){
-    const cur=s.compliance && s.compliance[c[0]] ? s.compliance[c[0]] : {status:"unknown",certNo:""};
-    f+=`<div class="comp" data-c="${c[0]}">
-      <div class="nm">${esc(c[1])}</div>
-      <div class="chips">${CSTAT.map(o=>`<button class="chip" data-s="${o[0]}" aria-pressed="${cur.status===o[0]}">${o[1]}</button>`).join("")}</div>
-      <input type="text" placeholder="证书号 / 有效期（选填）" value="${esc(cur.certNo||"")}">
-    </div>`;
-  }
+  /* 「合规资质」板块已于 v1.3 从录入页移除：现场拿不到证书原件，八项逐个点
+     只会拖慢录入。合规改由「合规完备度」一项主观评分表达；资质核验放在
+     打样 / 下单前由总部统一收，收不到就是收不到，不该由现场记录背书。
+     旧记录里的 compliance 字段保留，报告照常读出。 */
   f+=`<div class="sec">评分（1–5，全部填满才参与排名）</div>`;
   for(const d of SCORE_DIMS){
     const v=s.score? s.score[d[0]] : null;
@@ -1829,6 +1895,8 @@ window.FR={
   newSupplier, go, pendingChanges, selectFair, curFairId, fairSlug,
   /* 点击反馈：需要手动标记长操作时用 busy(el, promise) */
   busy: FRFX.busy, press: FRFX.press,
+  /* 展会删除：UI 走 deleteFairFlow（三重确认）；sync.js 收到云端墓碑时调 deleteFairLocal */
+  deleteFairLocal, deleteFairFlow, fairStats,
   /* 供 report.js 复用：常量表与纯计算函数，避免两处实现走样 */
   consts:{CATEGORIES, SCORE_DIMS, COMPLIANCE, CSTAT, FOLLOWUPS, MARKETS, PHOTO_TYPES, DEFAULT_WEIGHTS},
   util:{esc, labelOf, missing, scoreFilled, stateOf, weightedScore, tierOf,

@@ -95,6 +95,8 @@
     return `${userRoot()}/fairs/${f.id}`;
   }
   function metaPath() { return `${fairRoot()}/meta.json`; }
+  /* 指定展会的 meta 路径——删除展会时当前展会已经不存在了，必须能按 id 拼出来 */
+  function metaPathOf(fairId) { return `${userRoot()}/fairs/${fairId}/meta.json`; }
   function chunkPath(start) { return `${fairRoot()}/suppliers-${start}.json`; }
   function assetPath(id) { return `${fairRoot()}/assets/${id}.jpg`; }
   /* 旧版路径，仅用于向下兼容读取 */
@@ -447,7 +449,9 @@
       app: "FairRecorder",
       user: who(),
       fair: { id: fair.id, name: fair.name || "", nameEn: fair.nameEn || "",
-              phase: fair.phase || "", startDate: fair.startDate || "", endDate: fair.endDate || "" },
+              phase: fair.phase || "", startDate: fair.startDate || "", endDate: fair.endDate || "",
+              /* 墓碑：非空表示这个展会被删了，其他设备拉取时跟着删 */
+              deletedAt: fair.deletedAt || null },
       updatedAt: new Date().toISOString(),
       counts: {
         suppliers: bundle.export.counts.suppliers,
@@ -480,6 +484,41 @@
     log(`分块 ${chunks.length} 个，本次上传 ${dirty.size} 个脏块 / ${newPhotos} 张新照片`
       + (skipped ? `（跳过 ${skipped} 张已上传）` : ""));
     return { files: files.length, chunks: dirty.size, photos: newPhotos, skipped, sha: sha.slice(0, 7) };
+  }
+
+  /* ============================ 展会删除（墓碑） ============================
+     本机删除展会后，必须往云端写一条 meta.fair.deletedAt，否则别的设备下次
+     拉取时又把这个展会原样拉回来——删了等于没删。
+     墓碑 meta 很小：只带 id / 名称 / 删除时间，不带任何业务数据。 */
+  async function pushTombstone(fairId) {
+    if (!configured()) throw new Error("请先填写 owner / repo / token");
+    await assertSafe();
+    await ensureIdentity();
+    const f = await FR.get("fairs", fairId);
+    if (!f) throw new Error("本机没有这个展会");
+    const mp = metaPathOf(fairId);
+    const meta = {
+      layout: LAYOUT, app: "FairRecorder", user: who(),
+      fair: { id: fairId, name: f.name || "", nameEn: f.nameEn || "",
+              phase: f.phase || "", startDate: f.startDate || "", endDate: f.endDate || "",
+              deletedAt: f.deletedAt || new Date().toISOString() },
+      updatedAt: new Date().toISOString(),
+      counts: { suppliers: 0, photos: 0, plans: 0, tombstones: 0 },
+      chunks: [], uploadedPhotos: null, weights: null,
+      encrypted: false, enc: null, deleted: true,
+    };
+    const sha = await Syncer.uploadContent(
+      [{ path: mp, b64: strToBase64(JSON.stringify(meta)) }],
+      `FairRecorder delete — ${who()} — ${f.name || fairId.slice(0, 8)} — tombstone`);
+    return { files: 1, sha: sha.slice(0, 7) };
+  }
+
+  /* 收到云端墓碑：在本机执行同一套删除（不再弹确认——用户在删的那台设备上已经确认过） */
+  async function applyRemoteDeletion(fairId, meta) {
+    if (!FR.deleteFairLocal) throw new Error("本机版本太旧，不支持展会删除，请更新页面");
+    const r = await FR.deleteFairLocal(fairId, (meta && meta.fair && meta.fair.deletedAt) || null);
+    return { deleted: true, id: fairId, name: r.name || fairId,
+             suppliers: r.suppliers || 0, plans: r.plans || 0, photos: r.photos || 0 };
   }
 
   /* ============================ 拉取 ============================ */
@@ -532,6 +571,10 @@
     }
 
     /* 新版布局 */
+    /* 云端说这个展会已经被删了：本机跟着删，别再把它拉回来 */
+    if (meta.fair && meta.fair.deletedAt) {
+      return applyRemoteDeletion(FR.fair ? FR.fair.id : null, meta);
+    }
     await ensureFair(meta.fair);
     let key = null;
     if (meta.encrypted) {
@@ -596,6 +639,7 @@
           id,
           name: f.name || f.nameEn || id,
           nameEn: f.nameEn || "",
+          deleted: !!(f.deletedAt || m.deleted),
           dates: [f.startDate, f.endDate].filter(Boolean).join(" → "),
           suppliers: (m.counts && m.counts.suppliers) || 0,
           photos: (m.counts && m.counts.photos) || 0,
@@ -623,6 +667,11 @@
       const data = meta.__legacy || {};
       await ensureFair(Object.assign({ id: fairId }, data.fair || {}));
       return applyBundle(data, st, null, fairId, wantPhotos);
+    }
+
+    /* 墓碑：这台设备上的同名展会也要删掉 */
+    if (meta.fair && meta.fair.deletedAt) {
+      return applyRemoteDeletion(fairId, meta);
     }
 
     let key = null;
@@ -653,6 +702,7 @@
     const list = await listRemoteFairs();
     const out = [];
     for (const f of list) {
+      /* 已删除的展会也要走一遍 pullFair：那一趟会把它从本机删掉 */
       try {
         out.push(await pullFair(f.id, opts));
       } catch (e) {
@@ -668,6 +718,18 @@
     const cur = FR.fair ? FR.fair.id : null;
     const out = [];
     for (const f of fairs) {
+      /* 墓碑优先：删掉的展会也要推一次，否则别的设备永远不知道它没了。
+         已经推过墓碑（备份时间晚于删除时间）的就不用重复推。 */
+      if (f.deletedAt) {
+        if (f.lastPushAt && f.lastPushAt > f.deletedAt) continue;
+        try {
+          await pushTombstone(f.id);
+          out.push({ id: f.id, name: f.name || f.nameEn || f.id, tombstone: true, files: 1 });
+        } catch (e) {
+          out.push({ id: f.id, name: f.name || f.id, error: e.message });
+        }
+        continue;
+      }
       if (f.archived) continue;
       await FR.selectFair(f.id);
       try {
@@ -690,6 +752,8 @@
       if (!/没有这个展会|没有本展会/.test(e.message)) throw e;
       out.pulled = { skipped: "云端还没有这个展会，直接进入上传" };
     }
+    /* 拉下来的是墓碑：本机刚被删掉，这一步就到此为止，别再往回推 */
+    if (out.pulled && out.pulled.deleted) return out;
     out.pushed = await push(scope || S.scope || "meta");
     return out;
   }
@@ -798,7 +862,7 @@
           + (list.length
             ? list.map((f) => esc(f.name)
               + (f.dates ? " · " + esc(f.dates) : "")
-              + " · " + f.suppliers + " 条 / " + f.photos + " 张"
+              + (f.deleted ? " · <b>已删除（墓碑）</b>" : " · " + f.suppliers + " 条 / " + f.photos + " 张")
               + (f.encrypted ? " · 已加密" : "")).join("<br>")
             : "<i>云端还没有任何展会</i>");
       }
@@ -961,6 +1025,13 @@
         log("开始拉取…");
         const r = await Scheduler.run(() => pull());
         if (!r) return;
+        if (r.deleted) {
+          log(`「${r.name}」在云端已被删除 —— 本机副本已同步删除`
+            + `（记录 ${r.suppliers} / 计划 ${r.plans} / 照片 ${r.photos}）`);
+          FR.toast("该展会已在别处被删除，本机已同步删除", 6000);
+          await renderStatus();
+          return;
+        }
         log(`拉取完成：记录 ${r.suppliers} / 计划 ${r.plans} / 照片 ${r.photos}（云端共 ${r.remote} 条）`);
         FR.toast("恢复完成", 4000);
         await renderStatus();
@@ -1002,12 +1073,14 @@
         log("开始拉取全部展会（" + (withPhotos ? "含照片" : "仅记录") + "）…");
         const res = await Scheduler.run(() => pullAll({ photos: withPhotos }));
         if (!res) return;
-        let ns = 0, np = 0, err = 0;
+        let ns = 0, np = 0, err = 0, nd = 0;
         for (const r of res) {
           if (r.error) { err++; log("  ✗ " + r.name + "：" + r.error); }
+          else if (r.deleted) { nd++; log("  🗑 " + r.name + "：云端已删除，本机已同步删除"); }
           else { ns += r.suppliers || 0; np += r.photos || 0; log("  ✓ " + r.name + "：记录 " + r.suppliers + " / 照片 " + r.photos); }
         }
-        log(`全部拉取完成：新增/更新记录 ${ns} 条、照片 ${np} 张${err ? "，失败 " + err + " 个" : ""}`);
+        log(`全部拉取完成：新增/更新记录 ${ns} 条、照片 ${np} 张`
+          + (nd ? `，同步删除 ${nd} 个展会` : "") + (err ? `，失败 ${err} 个` : ""));
         FR.toast("已拉取全部展会", 4000);
         await renderStatus();
         if (ns || np) FR.toast("展会已同步到本机，可回展会页切换", 5000);
@@ -1028,6 +1101,7 @@
         if (!res) return;
         for (const r of res) {
           if (r.error) log("  ✗ " + r.name + "：" + r.error);
+          else if (r.tombstone) log("  🗑 " + r.name + "：墓碑已上传，其他设备同步后会删除");
           else log("  ✓ " + r.name + "：" + r.files + " 个文件，commit " + r.sha);
         }
         log("全部展会备份完成（" + res.length + " 个）");
@@ -1048,7 +1122,7 @@
 
   /* 供自动备份定时器调用 */
   window.FRSync = {
-    push, pull, ready, testConnection,
+    push, pull, ready, testConnection, pushTombstone,
     /* 多终端：发现云端展会 / 拉取单个 / 拉全部 / 推全部 / 双向同步 */
     listRemoteFairs, pullFair, pullAll, pushAll, syncNow,
     get busy() { return Scheduler.busy; },

@@ -90,6 +90,11 @@ const check = (cond, m) => (cond ? ok(m) : bad(m));
   const curFair1 = await page.evaluate(() => FR.fair.id);
   check(fairId1 === curFair1, "新记录挂在当前展会下");
 
+  // 4.1）录入页形态：品类含智能马桶，商务条件 / 合规资质已移除
+  const formShape = await page.$eval("#editForm", (el) => el.textContent);
+  check(/智能马桶/.test(formShape), "录入页品类含「智能马桶」");
+  check(!/商务条件|合规资质|MOQ/.test(formShape), "录入页已移除商务条件 / 合规资质");
+
   // 5) 切到第二个展会，记录数应归零（隔离）
   await page.evaluate(async () => {
     const all = await FR.all("fairs");
