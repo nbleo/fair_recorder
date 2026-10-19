@@ -806,7 +806,14 @@
     await loadCfg();
     const set = (id, v) => { const el = $(id); if (el) el.value = v || ""; };
     set("#syOwner", S.owner); set("#syRepo", S.repo); set("#syBranch", S.branch);
-    set("#syRoot", S.root); set("#syToken", S.token); set("#syNamespace", S.namespace);
+    set("#syRoot", S.root); set("#syNamespace", S.namespace);
+    /* token 不回填：同步页是常看的页面，手机临时借人、投屏、截屏时不该把
+     * 一枚有写权限的 token 摆在那里。留空即表示"沿用已保存的那枚"。 */
+    const tk = $("#syToken");
+    if (tk) {
+      tk.value = "";
+      tk.placeholder = S.token ? "已保存（留空则不修改）" : "github_pat_… / ghp_…";
+    }
 
     const chip = (group, val) => {
       $$(`#${group} .chip`).forEach((b) =>
@@ -839,7 +846,8 @@
       S.repo = $("#syRepo").value.trim();
       S.branch = $("#syBranch").value.trim() || "main";
       S.root = $("#syRoot").value.trim() || "users";
-      S.token = $("#syToken").value.trim();
+      const typed = $("#syToken").value.trim();
+      if (typed) S.token = typed;                   /* 留空 = 沿用已保存的 token */
       S.namespace = $("#syNamespace").value.trim();
       S.repoPrivate = null;                         // 换仓库后必须重新校验
       await saveCfg();

@@ -267,6 +267,35 @@ users/<github-login>/fairs/<展会ID>/assets/<照片ID>.jpg   产品图 / 名片
 每个人只写自己的 `users/<login>/` 前缀，多人共用一个私有仓也不会互相覆盖。
 登录名在「测试连接」时自动取；读不到 `/user` 权限时可在界面手填命名空间。
 
+### 安全边界核查（2026-10-19 复核）
+
+对整条链路做过一次完整审计，结论如下。**「数据会不会泄露」取决于三个环节，
+每个环节都有独立防线**：
+
+| 环节 | 防线 | 实测结果 |
+|---|---|---|
+| 公开仓会不会混进数据 | `config.json` / `output/` / `inbox/` / `*.zip` 全在 gitignore；`setup_github.py` 两仓同名直接拒绝 | 公开仓 37 个文件，无一含数据；线上 `/config.json`、`/inbox`、`/output`、`/.git/config` 全 404 |
+| App 会不会把数据传错地方 | `assertSafe()`：命中 `PUBLIC_CODE_REPOS` 黑名单直接拒绝；否则实时查 `/repos` 校验 `private`，公开仓拒绝上传 | 冒烟测试实测拦截；`pushAll` / `syncNow` 均复用 `push()`，无绕过路径 |
+| 私有仓谁能看 | 私有仓 + 按人分命名空间 | 未认证访问 `repo` / `contents` / `users/` 全部 404；协作者仅 owner 一人 |
+
+其他确认项：
+
+- **前端只有一个出口**：全代码库唯一的外部请求是 `api.github.com`（`app/sync.js` 第 129 行）。
+  没有统计、没有遥测、没有第三方 CDN——离线可用，也无从外发。
+- **token 只进 IndexedDB**，不进 localStorage、不进 git、不进任何日志。输入框是
+  `type="password"`，且**重新打开同步页不回显**（显示「已保存（留空则不修改）」），
+  避免手机外借、投屏、截屏时被人一眼看到。
+- **git 历史干净**：`git log --all` 里没有任何 `config.json` / `.env` / ZIP / 数据文件。
+- **Service Worker 只缓存程序外壳**，不缓存任何业务数据。
+
+需要你自己守的两条（代码拦不住）：
+
+1. **token 请只授权这一个私有仓**，不要用 All repositories。万一 token 外泄，
+   前者只丢这一个仓，后者是全部仓库。（目前你手上那枚是 All repositories 范围。）
+2. **默认不加密**——数据在 GitHub 上是明文的，私有仓 + TLS 已经挡住了外部访问。
+   若要防"GitHub 内部可见"，在同步页把「云端加密」打开（AES-GCM-256 + PBKDF2
+   100000 轮），**口令丢失无法恢复，务必先记下来**。
+
 ### 存储与同步逻辑（参考 glink25/Cent）
 
 Cent 是"纯前端 PWA + GitHub 仓库即数据库"的开源记账应用，本项目的同步层
