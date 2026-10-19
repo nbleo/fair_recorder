@@ -507,7 +507,22 @@
 
     const st = await Syncer.fetchStructure();
     const meta = await readMeta(st);
-    if (!meta) throw new Error("云端没有本展会的备份，请先上传一次");
+    if (!meta) {
+      /* 最常见的原因：这台设备的展会是自己新建的，UUID 和电脑端那个不一样，
+       * 于是按 ID 精确匹配永远落空。只说「没有备份」会让人以为数据丢了——
+       * 把云端真实存在的展会列出来，并指明该用哪个按钮。 */
+      let hint = "";
+      try {
+        const list = await listRemoteFairs();
+        if (list.length) {
+          hint = " 云端现有 " + list.length + " 个展会："
+            + list.map((f) => f.name + "（" + f.suppliers + " 条）").join("、")
+            + "。请用「📥 拉取云端全部展会」——它会把展会连同记录一起带到本机，"
+            + "不需要两端先建同名展会。";
+        }
+      } catch (e) { /* 列不出来就不附加提示 */ }
+      throw new Error("云端没有本展会（" + (FR.fair.name || FR.fair.id) + "）的备份。" + hint);
+    }
 
     /* 旧版布局：直接是一整个 bundle */
     if (meta.layout === LEGACY_LAYOUT) {
@@ -770,6 +785,37 @@
 
   /* ============================ UI ============================ */
 
+  /* 列出云端展会并渲染到 #syRemoteList。
+   * 保存配置成功后自动调一次——用户填完配置就该立刻看到"云端到底有没有东西"，
+   * 而不是点完拉取才发现为空，然后怀疑是不是没同步上。 */
+  async function showRemoteList() {
+    const box = $("#syRemoteList");
+    try {
+      const list = await listRemoteFairs();
+      if (box) {
+        box.classList.remove("hide");
+        box.innerHTML = "<b>云端展会（" + list.length + "）</b><br>"
+          + (list.length
+            ? list.map((f) => esc(f.name)
+              + (f.dates ? " · " + esc(f.dates) : "")
+              + " · " + f.suppliers + " 条 / " + f.photos + " 张"
+              + (f.encrypted ? " · 已加密" : "")).join("<br>")
+            : "<i>云端还没有任何展会</i>");
+      }
+      log(list.length
+        ? "云端有 " + list.length + " 个展会：" + list.map((f) => f.name).join("、")
+        : "云端还没有展会——在本机备份一次后就会出现");
+      return list;
+    } catch (e) {
+      if (box) {
+        box.classList.remove("hide");
+        box.innerHTML = "<i>读不到云端展会：" + esc(e.message) + "</i>";
+      }
+      log("云端展会清单读取失败：" + e.message);
+      return [];
+    }
+  }
+
   async function renderStatus() {
     const pend = FR.pendingChanges();
     const set = (id, v, color) => {
@@ -780,7 +826,12 @@
       pend ? "var(--warn)" : "var(--accent)");
     set("#syLocal", `${FR.suppliers.length} 条 / ${FR.photos.length} 张`);
     set("#syLast", S.lastSyncAt ? new Date(S.lastSyncAt).toLocaleString("zh-CN") : "从未");
-    set("#syWho", S.login || S.namespace || "未确定");
+    /* 把命名空间完整显示出来：「拉不到数据」的第二大原因就是身份没识别出来，
+     * 于是读写的是 users//fairs/ 而不是 users/<登录名>/fairs/。让用户一眼能核对。 */
+    const w = S.login || S.namespace || "";
+    set("#syWho", w ? `${w} → ${(S.root || "users")}/${w}`
+      : "未确定 ⚠️ 请在下方「访问者命名空间」手填",
+      w ? undefined : "var(--danger)");
     try { set("#sySpace", FR.fair ? fairRoot() : "未选择展会"); }
     catch (e) { set("#sySpace", "需先确定访问者身份"); }
     set("#syFair", FR.fair ? (FR.fair.name || FR.fair.nameEn || "（未命名）") : "未选择展会");
@@ -859,6 +910,10 @@
         try {
           const r = await testConnection();
           log("连接成功：" + r);
+          /* 先把身份/可见性刷出来（本地读，瞬间），再去读云端清单（要走网络）。
+           * 反过来会让用户干等好几秒才看到"我是谁"。 */
+          try { await renderStatus(); } catch (e) { /* 不因状态刷新中断 */ }
+          await showRemoteList();
         } catch (e) {
           log("校验未通过：" + e.message);
           FR.toast("请检查配置：" + e.message, 5000);
@@ -897,7 +952,12 @@
 
     $("#syPull").onclick = async () => {
       try {
-        if (!confirm("从云端恢复到本展会：只覆盖云端更新的版本，本机较新的记录不会被覆盖。继续？")) return;
+        if (!FR.fair) {
+          FR.toast("请先在展会页选择一个展会。新设备请改用「📥 拉取云端全部展会」", 5000);
+          return;
+        }
+        if (!confirm("从云端恢复到本展会（" + (FR.fair.name || FR.fair.nameEn || FR.fair.id)
+          + "）：只覆盖云端更新的版本，本机较新的记录不会被覆盖。继续？")) return;
         log("开始拉取…");
         const r = await Scheduler.run(() => pull());
         if (!r) return;
@@ -932,21 +992,10 @@
 
     /* --- 拉取云端全部展会（换设备后的第一步） --- */
     $("#syPullAll").onclick = async () => {
-      const box = $("#syRemoteList");
       try {
         log("正在读取云端展会清单…");
-        const list = await Scheduler.run(() => listRemoteFairs());
-        if (!list) return;
-        if (box) {
-          box.classList.remove("hide");
-          box.innerHTML = "<b>云端展会（" + list.length + "）</b><br>"
-            + list.map((f) => esc(f.name)
-              + (f.dates ? " · " + esc(f.dates) : "")
-              + " · " + f.suppliers + " 条 / " + f.photos + " 张"
-              + (f.encrypted ? " · 已加密" : "")).join("<br>")
-            || "<i>云端还没有任何展会</i>";
-        }
-        if (!list.length) { log("云端还没有任何展会——先在这台设备备份一次"); return; }
+        const list = await Scheduler.run(() => showRemoteList());
+        if (!list || !list.length) return;
         const withPhotos = confirm(
           "将拉取云端 " + list.length + " 个展会。\n\n"
           + "点「确定」= 连照片一起拉（流量较大）\n点「取消」= 只拉记录与元数据");

@@ -332,7 +332,11 @@ input[type=date]{min-height:var(--tap)}
   <button class="btn btn-primary" id="sySync" style="margin-bottom:12px">🔄 双向同步（先把云端新的拉下来，再推本机改动）</button>
   <button class="btn" id="syPush" style="margin-bottom:12px">⬆️ 立即备份（只推本机改动）</button>
   <button class="btn" id="syPushFull" style="margin-bottom:12px">🖼️ 立即全量备份（含原图）</button>
-  <button class="btn" id="syPull" style="margin-bottom:12px">⬇️ 从云端恢复本展会</button>
+  <button class="btn" id="syPull" style="margin-bottom:4px">⬇️ 从云端恢复本展会</button>
+  <div class="tiny muted" style="margin-bottom:12px">
+    按展会 <b>ID 精确匹配</b>——只适用于两端已经存在同一个展会。
+    换设备拉电脑端数据，请用下面的「📥 拉取云端全部展会」。
+  </div>
   <div class="btn-row">
     <button class="btn" id="syPullAll">📥 拉取云端全部展会</button>
     <button class="btn" id="syPushAll">📤 备份本机全部展会</button>
