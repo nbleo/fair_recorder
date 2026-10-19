@@ -133,9 +133,38 @@ input[type=date]{min-height:var(--tap)}
 .kv .v{text-align:right;overflow-wrap:anywhere}
 .bar{height:8px;border-radius:999px;background:var(--panel2);overflow:hidden;margin-top:6px}
 .bar>i{display:block;height:100%;background:var(--accent)}
+
+/* --- 点击反馈：按下的瞬间就要有反应 --- */
+button,.btn,.chip,.star,.item,.back,.ph,.x{
+  transition:transform .12s ease-out,filter .12s ease-out,background-color .12s ease-out}
+.pressed{transform:scale(.955)!important;filter:brightness(1.5) saturate(1.06)}
+/* 涟漪只在按下那一刻临时加，动画结束即移除，不影响原有布局 */
+.tappable{position:relative;overflow:hidden}
+.ripple{position:absolute;border-radius:999px;background:rgba(255,255,255,.30);
+  pointer-events:none;transform:scale(0);opacity:.85;animation:fr-ripple .5s ease-out forwards}
+@keyframes fr-ripple{to{transform:scale(1);opacity:0}}
+/* 异步操作：按钮上转圈 + 顶部细进度条，同时禁掉重复点击 */
+.is-busy{opacity:.72;pointer-events:none;cursor:progress}
+.spin{width:17px;height:17px;flex:0 0 auto;border-radius:50%;
+  border:2.5px solid rgba(255,255,255,.25);border-top-color:currentColor;
+  animation:fr-spin .7s linear infinite}
+@keyframes fr-spin{to{transform:rotate(360deg)}}
+#workbar{position:fixed;left:0;right:0;top:0;height:3px;z-index:200;overflow:hidden;
+  opacity:0;transition:opacity .18s;pointer-events:none}
+#workbar.on{opacity:1}
+#workbar>i{position:absolute;top:0;bottom:0;width:36%;display:block;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  animation:fr-wb 1.05s ease-in-out infinite}
+@keyframes fr-wb{0%{left:-40%}100%{left:100%}}
+@media (prefers-reduced-motion:reduce){
+  .ripple,.spin,#workbar>i{animation:none}
+  .pressed{transform:none!important}
+}
 </style>
 </head>
 <body>
+
+<div id="workbar" aria-hidden="true"><i></i></div>
 
 <header class="top" id="topbar">
   <div class="top-row">
@@ -521,7 +550,7 @@ input[type=date]{min-height:var(--tap)}
 "use strict";
 /* ============================ 常量 ============================ */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 
 /* 展会预设：只预填城市/场馆/展区，不限制品类，任何展会都能自建 */
 const FAIR_PRESETS = [
@@ -645,6 +674,117 @@ function labelOf(opts, val){
   for(const o of opts){ const v=Array.isArray(o)?o[0]:o; if(v===val) return Array.isArray(o)?o[1]:o; }
   return val;
 }
+
+/* ============================ 点击反馈 ============================
+   手机上点下去如果画面没任何变化，用户无法判断"到底点没点上"。
+   这里做三件事：
+     1) 按下的那一帧就缩放 + 提亮 + 涟漪（capture 阶段监听，早于任何业务代码）；
+     2) 异步操作自动进入忙碌态：按钮上转圈、顶部走一条细进度条、并挡掉重复点击；
+     3) 所有 el.onclick = fn 都会自动包一层，业务代码不用改。 */
+const FRFX=(function(){
+  let pressedEl=null, pressTimer=null, working=0;
+  const TAP_SEL="button,.btn,.chip,.star,.item,.back,.ph,.x,[data-a]";
+
+  function setBar(on){
+    const b=document.getElementById("workbar");
+    if(b) b.classList.toggle("on", !!on);
+  }
+  function ripple(el, ev){
+    if(!el) return;
+    const r=el.getBoundingClientRect();
+    let x=r.width/2, y=r.height/2;
+    if(ev && ev.clientX!=null){ x=ev.clientX-r.left; y=ev.clientY-r.top; }
+    else if(ev && ev.touches && ev.touches[0]){ x=ev.touches[0].clientX-r.left; y=ev.touches[0].clientY-r.top; }
+    const d=Math.max(r.width,r.height)*2.2;
+    const s=document.createElement("span");
+    s.className="ripple";
+    s.setAttribute("aria-hidden","true");
+    s.style.cssText="width:"+d+"px;height:"+d+"px;left:"+(x-d/2)+"px;top:"+(y-d/2)+"px";
+    el.classList.add("tappable");
+    el.appendChild(s);
+    setTimeout(()=>{ if(s.parentNode===el) s.remove(); el.classList.remove("tappable"); }, 540);
+  }
+  function press(el, ev){
+    if(!el || el.nodeType!==1) return;
+    if(pressedEl && pressedEl!==el) unpress();
+    pressedEl=el;
+    el.classList.add("pressed");
+    ripple(el, ev);
+    try{ if(navigator.vibrate) navigator.vibrate(8); }catch(e){}
+    clearTimeout(pressTimer);
+    pressTimer=setTimeout(unpress, 260);
+  }
+  function unpress(){
+    clearTimeout(pressTimer);
+    if(pressedEl){ pressedEl.classList.remove("pressed"); pressedEl=null; }
+  }
+  /* 异步按钮：转圈 + 顶部进度条 + 防重复点击。传进来的 promise 结束后自动恢复 */
+  function busy(el, p){
+    if(!el || !p || typeof p.then!=="function") return p;
+    if(el.dataset.busy==="1") return p;
+    el.dataset.busy="1";
+    el.classList.add("is-busy");
+    el.setAttribute("aria-busy","true");
+    const sp=document.createElement("span");
+    sp.className="spin"; sp.setAttribute("aria-hidden","true");
+    el.appendChild(sp);
+    working++; setBar(true);
+    let finished=false;
+    /* 兜底：万一某个 promise 永远不 settle（例如系统分享面板没回调），
+       60 秒后强制解绑，避免按钮永久卡在忙碌态。 */
+    const guard=setTimeout(done, 60000);
+    function done(){
+      if(finished) return;
+      finished=true; clearTimeout(guard);
+      el.classList.remove("is-busy");
+      el.dataset.busy="";
+      el.removeAttribute("aria-busy");
+      if(sp.parentNode===el) sp.remove();
+      working=Math.max(0,working-1);
+      if(working===0) setBar(false);
+    }
+    p.then(done, done);
+    return p;
+  }
+  function targetOf(t){
+    if(!t || t.nodeType!==1) return null;
+    if(t.matches && t.matches("input,select,textarea,option")) return null;
+    return t.closest ? t.closest(TAP_SEL) : null;
+  }
+  const onDown=(ev)=>{ const el=targetOf(ev.target); if(el) press(el, ev); };
+  const onUp=()=>{ setTimeout(unpress, 130); };
+  ["touchstart","pointerdown","mousedown"].forEach(n=>
+    document.addEventListener(n, onDown, {capture:true, passive:true}));
+  ["touchend","touchcancel","pointerup","pointercancel","mouseup"].forEach(n=>
+    document.addEventListener(n, onUp, {capture:true, passive:true}));
+  /* 兜底：内联 onclick="..." 不经过 IDL setter，靠这里补上按下反馈 */
+  document.addEventListener("click", onDown, {capture:true, passive:true});
+
+  return {press, unpress, busy, ripple, get working(){ return working; }};
+})();
+
+/* 让 el.onclick = fn 自动带上按下反馈；返回 Promise 的还会自动进入忙碌态 */
+(function(){
+  const G=(typeof GlobalEventHandlers!=="undefined")?GlobalEventHandlers.prototype:HTMLElement.prototype;
+  const d=Object.getOwnPropertyDescriptor(G,"onclick");
+  if(!d || !d.set) return;
+  Object.defineProperty(HTMLElement.prototype,"onclick",{
+    configurable:true, enumerable:d.enumerable,
+    get(){ return d.get.call(this); },
+    set(fn){
+      if(typeof fn!=="function"){ d.set.call(this, fn); return; }
+      const el=this;
+      d.set.call(this, function(ev){
+        FRFX.press(el, ev);
+        /* 还在忙碌中的按钮直接忽略：避免连点触发两次备份/两次上传 */
+        if(el.dataset.busy==="1") return;
+        const r=fn.call(this, ev);
+        if(r && typeof r.then==="function") FRFX.busy(el, r);
+        return r;
+      });
+    }
+  });
+})();
 
 /* ============================ 数据库 ============================
    一次展会 = 一个 fair 记录；供应商 / 计划 / 照片都挂在 fairId 下。
@@ -1687,6 +1827,8 @@ async function renderSettings(){
 window.FR={
   db, get, put, all, del, getKV, setKV, refresh, buildBundle, toast, uid, now, compress, sha256Hex,
   newSupplier, go, pendingChanges, selectFair, curFairId, fairSlug,
+  /* 点击反馈：需要手动标记长操作时用 busy(el, promise) */
+  busy: FRFX.busy, press: FRFX.press,
   /* 供 report.js 复用：常量表与纯计算函数，避免两处实现走样 */
   consts:{CATEGORIES, SCORE_DIMS, COMPLIANCE, CSTAT, FOLLOWUPS, MARKETS, PHOTO_TYPES, DEFAULT_WEIGHTS},
   util:{esc, labelOf, missing, scoreFilled, stateOf, weightedScore, tierOf,
