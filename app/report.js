@@ -649,6 +649,8 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
       + `<w:r>${rp.length ? `<w:rPr>${rp.join("")}</w:rPr>` : ""}`
       + `<w:t xml:space="preserve">${xmlEsc(ln)}</w:t></w:r></w:p>`).join("");
   }
+  /* 分页符：v1.8 起全篇不再使用 —— 短章节（比如只有一行统计的 Supplier List）
+     硬分一页会白留大半页空白，改由 Word 按内容自然流排。保留函数以备后用。 */
   function wPageBreak() {
     return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
   }
@@ -801,8 +803,9 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
     body += wPara("Prepared for: " + (ev.prepared_for || "—"), { size: 10 });
     body += wPara("Generated " + ctx.generated_at, { size: 8, italic: true, color: "5C6480" });
 
-    /* 1 —— 只留总数统计 */
-    body += wPageBreak();
+    /* 1 —— 只留总数统计
+       全篇不再插硬分页（封面也不单独占一页）：让 Word 按内容自然流排，
+       短章节不会白留大半页空白。与 Python 端 write_docx 口径保持一致。 */
     body += wPara("1. Supplier List", { style: "Heading1" });
     body += wTable(["Metric", "Value"], [["Suppliers recorded", ctx.suppliers.length]], [3600, 3600]);
 

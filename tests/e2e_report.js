@@ -334,7 +334,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     "DOCX 里 Booth Photos 排在 Highlight products 之后");
   /* 排版：不再逐节硬分页；照片改用隐形表格横向并排 */
   const brk = (docx.doc.match(/<w:br w:type="page"\/>/g) || []).length;
-  check(brk <= 1, "DOCX 不再逐节强制分页（硬分页 " + brk + " 处，只剩封面后一处）");
+  check(brk === 0, "DOCX 不再插硬分页（实际 " + brk + " 处，短章节不再白占整页）");
   const tblBlocks = docx.doc.split("<w:tbl>").slice(1)
     .filter((b) => b.indexOf("<w:drawing>") >= 0 && b.indexOf("</w:tbl>") >= 0);
   check(tblBlocks.length >= 3, "照片用隐形表格承载（名片 / 亮点 / Booth 各一组，实际 " + tblBlocks.length + " 组）");
