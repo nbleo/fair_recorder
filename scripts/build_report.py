@@ -76,35 +76,41 @@ def write_master_xlsx(ctx: F.Context, path: Path) -> None:
     # --- Suppliers -------------------------------------------------------- #
     ws = wb.active
     ws.title = "Suppliers"
-    cols = [
+    cols = ([
         ("Company (EN / ZH)", 34), ("Company ZH", 26), ("Booth", 14), ("Hall / Area", 16),
         ("Source", 12), ("Contact", 14), ("Title", 14), ("Phone", 16), ("WeChat", 16),
         ("Email", 24), ("Website", 22), ("Categories", 26), ("Product / highlights", 34),
         ("Models", 16), ("MOQ", 16), ("Price", 22), ("Incoterm", 10), ("Lead time (d)", 12),
         ("Capacity", 18), ("Export markets", 24), ("EU / DE experience", 16),
-        ("Total score", 11), ("Tier", 13), ("fit", 6), ("compliance", 11), ("quality", 8),
-        ("price", 6), ("capacity", 9), ("communication", 13), ("State", 10),
-        ("Missing", 24), ("Compliance gaps", 22), ("Follow-up", 13), ("Next action", 26),
-        ("Due", 12), ("Notes", 40), ("Photos", 8), ("Last updated", 19),
-    ]
+        ("Total score", 11), ("Tier", 13),
+    ] + [(d[2], 8) for d in F.SCORE_DIMS] \
+      + [(f"{d[2]} comments", 34) for d in F.SCORE_DIMS] \
+      + [(f"Card {en}", 16) for _c, en in F.NAMECARD_FIELDS] \
+      + [("Highlight products", 40), ("State", 10), ("Missing", 24), ("Follow-up", 13),
+         ("Next action", 26), ("Due", 12), ("Notes", 40), ("Photos", 8), ("Last updated", 19)])
     ws.append([c[0] for c in cols])
     for s in ctx.suppliers:
         sc = s.get("score") or {}
-        ws.append([
-            s["_company"], s.get("companyNameZh", ""), s.get("boothNo", ""),
-            " / ".join(x for x in (s.get("hall"), s.get("area")) if x),
-            F.source_en(s),
-            s.get("contactName", ""), s.get("contactTitle", ""), s.get("phone", ""),
-            s.get("wechat", ""), s.get("email", ""), s.get("website", ""),
-            ", ".join(F.categories_en(s)), s.get("productDetails", ""), s.get("models", ""),
-            F.moq_text(s), F.price_text(s), s.get("incoterm", ""), s.get("leadTimeDays"),
-            F.capacity_text(s), ", ".join(F.markets_en(s)), s.get("euGermanyExperience", ""),
-            s["_score"] if s["_rankable"] else "not ranked", s["_tier"], sc.get("fit"), sc.get("compliance"), sc.get("quality"),
-            sc.get("price"), sc.get("capacity"), sc.get("communication"),
-            s["_state"], ", ".join(s["_missing"]), ", ".join(s["_blockers"]) or "none recorded",
-            F.followup_en(s), s.get("nextAction", ""), s.get("nextActionDate", ""),
-            s.get("notes", ""), s["_photoCount"], s.get("updatedAt", ""),
-        ])
+        sn = F.score_comments(s)
+        card = s.get("namecard") or {}
+        hl = " | ".join(" — ".join(x for x in (it["title"] or "", it["note"]) if x)
+                        for it in F.highlights(s))
+        row = [s["_company"], s.get("companyNameZh", ""), s.get("boothNo", ""),
+               " / ".join(x for x in (s.get("hall"), s.get("area")) if x),
+               F.source_en(s),
+               s.get("contactName", ""), s.get("contactTitle", ""), s.get("phone", ""),
+               s.get("wechat", ""), s.get("email", ""), s.get("website", ""),
+               ", ".join(F.categories_en(s)), s.get("productDetails", ""), s.get("models", ""),
+               F.moq_text(s), F.price_text(s), s.get("incoterm", ""), s.get("leadTimeDays"),
+               F.capacity_text(s), ", ".join(F.markets_en(s)), s.get("euGermanyExperience", ""),
+               s["_score"] if s["_rankable"] else "not ranked", s["_tier"]]
+        row += [sc.get(d[0]) if isinstance(sc.get(d[0]), (int, float)) else "" for d in F.SCORE_DIMS]
+        row += [sn.get(d[0]) or "" for d in F.SCORE_DIMS]
+        row += [str(card.get(c) or "") for c, _en in F.NAMECARD_FIELDS]
+        row += [hl, s["_state"], ", ".join(s["_missing"]),
+                F.followup_en(s), s.get("nextAction", ""), s.get("nextActionDate", ""),
+                s.get("notes", ""), s["_photoCount"], s.get("updatedAt", "")]
+        ws.append(row)
     _style_header(ws, [c[1] for c in cols], "C2")
     for r in range(2, ws.max_row + 1):
         ws.row_dimensions[r].height = 20
@@ -263,6 +269,11 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
 .b-draft{background:#FDECEC;color:#B3261E}
 .warn{background:#FFF7E6;border:1px solid #F2D194;color:#8A5300;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:14px}
 .mut{color:var(--mut)}.small{font-size:13px}
+/* 名片 / 亮点产品：与基础信息用虚线隔开，否则一堆 kv 行糊成一片 */
+.blk{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.blkt{font-size:13px;font-weight:700;color:var(--acc);letter-spacing:.3px;margin-bottom:8px}
+.hl{border-left:3px solid var(--acc);padding:2px 0 8px 12px;margin:12px 0}
+.hlt{font-size:15px;font-weight:700;margin-bottom:4px}
 #lb{position:fixed;inset:0;z-index:300;background:rgba(10,14,30,.94);display:none;
  align-items:center;justify-content:center;touch-action:none}
 #lb.on{display:flex}
@@ -337,95 +348,115 @@ LIGHTBOX_JS = """
 """
 
 
+def supplier_card_html(ctx: F.Context, s: dict) -> str:
+    cards, by_hl, gallery = F.photo_buckets(ctx, s["id"])
+    notes = F.score_comments(s)
+    sc = s.get("score") or {}
+    cls = ("b-short" if s["_tier"] == "Shortlist" else "b-follow" if s["_tier"] == "Follow-up"
+           else "b-res" if s["_tier"] == "Reserve" else "b-low" if s["_tier"] == "Low priority" else "b-draft")
+    h = ["<div class='card'>"]
+    h.append(f"<div style='font-size:18px;font-weight:700'>{F.e(s['_company'])} "
+             f"<span class='badge {cls}'>{F.e(s['_tier'])}"
+             f"{(' · ' + str(s['_score'])) if s['_score'] is not None else ''}</span>"
+             f"<span class='badge b-follow'>{F.e(F.source_en(s))}</span></div>")
+    h.append(f"<div class='kv'><span class='k'>Booth</span><span>{F.e(' / '.join(x for x in (s.get('hall'), s.get('area'), s.get('boothNo')) if x)) or '—'}</span></div>")
+    contact = F.e(" / ".join(x for x in (s.get("contactName"), s.get("contactTitle")) if x)) or "—"
+    ways = " · ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x)
+    h.append(f"<div class='kv'><span class='k'>Contact</span><span>{contact}"
+             f"{(' · ' + F.e(ways)) if ways else ''}</span></div>")
+    h.append(f"<div class='kv'><span class='k'>Products</span><span>{F.e(s.get('productDetails') or '—')}</span></div>")
+    h.append(f"<div class='kv'><span class='k'>Capacity / Markets</span><span>"
+             f"{F.e(F.capacity_text(s))} · {F.e(', '.join(F.markets_en(s)) or '—')} · "
+             f"EU/DE experience: {F.e(s.get('euGermanyExperience') or 'Unknown')}</span></div>")
+    if s.get("notes"):
+        h.append(f"<div class='kv'><span class='k'>Notes</span><span>{F.e(s['notes'])}</span></div>")
+    if s.get("nextAction"):
+        h.append(f"<div class='kv'><span class='k'>Next action</span><span>{F.e(s['nextAction'])}"
+                 f"{(' · due ' + F.e(s['nextActionDate'])) if s.get('nextActionDate') else ''}</span></div>")
+    if s["_state"] == "draft":
+        h.append(f"<div class='warn small'>Draft record — missing: {F.e(', '.join(s['_missing']))}</div>")
+
+    # 评分 + 每项评语
+    if any(isinstance(sc.get(d[0]), (int, float)) for d in F.SCORE_DIMS):
+        h.append("<table><tr><th>Dimension</th><th>Weight</th><th>Rating</th><th>Comments</th></tr>")
+        for code, _zh, en in F.SCORE_DIMS:
+            v = sc.get(code)
+            rated = isinstance(v, (int, float))
+            stars = ("★" * int(v) + "☆" * (5 - int(v))) if rated else "—"
+            rate = f"{stars} {v}/5" if rated else "—"
+            h.append(f"<tr><td>{F.e(en)}</td><td>{F.e(ctx.weights.get(code, 0))}%</td>"
+                     f"<td>{F.e(rate)}</td><td>{F.e(notes.get(code) or '—')}</td></tr>")
+        h.append("</table>")
+
+    # 名片
+    rows = F.namecard_rows(s)
+    if rows or cards:
+        h.append("<div class='blk'><div class='blkt'>Name card</div>")
+        h.append("".join(f"<div class='kv'><span class='k'>{F.e(k)}</span><span>{F.e(v)}</span></div>"
+                         for k, v in rows))
+        if cards:
+            h.append("<div class='grid'>" + "".join(
+                f"<img src='{_b64_image(p['file'])}' alt='name card'>" for p in cards) + "</div>")
+        h.append("</div>")
+
+    # 亮点产品
+    items = F.highlights(s)
+    if items:
+        h.append("<div class='blk'><div class='blkt'>Highlight products</div>")
+        for it in items:
+            h.append("<div class='hl'>")
+            h.append(f"<div class='hlt'>{F.e(it['title'] or '(untitled)')}</div>")
+            if it["note"]:
+                h.append(f"<div style='white-space:pre-wrap;font-size:14px;margin-bottom:8px'>{F.e(it['note'])}</div>")
+            ph = by_hl.get(it["id"]) or []
+            if ph:
+                h.append("<div class='grid'>" + "".join(
+                    f"<img src='{_b64_image(p['file'])}' alt='highlight'>" for p in ph) + "</div>")
+            h.append("</div>")
+        h.append("</div>")
+
+    # 其余照片
+    if gallery:
+        h.append("<div class='grid'>" + "".join(
+            f"<img src='{_b64_image(p['file'])}' alt='{F.e(p.get('type'))}'>" for p in gallery) + "</div>")
+    h.append("</div>")
+    return "".join(h)
+
+
 def write_html(ctx: F.Context, path: Path) -> None:
     ev = ctx.event
     total = len(ctx.suppliers)
-    rated = [s for s in ctx.suppliers if s["_rankable"]]
-    drafts = [s for s in ctx.suppliers if s["_state"] == "draft"]
-    planned = [s for s in ctx.suppliers if s.get("source") == "planned"]
-    walkin = [s for s in ctx.suppliers if s.get("source") == "walk_in"]
-    manual = [s for s in ctx.suppliers if s.get("source") == "manual"]
-    picks = F.top_picks(ctx)
-    unvisited = [p for p in ctx.plans if p.get("status") != "visited"]
 
     h = [f"<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>",
          f"<title>Supplier Report — {F.e(ev['name'])}</title><style>{CSS}</style></head><body><div class='wrap'>"]
 
-    # Cover
     h.append(f"<h1>Supplier Report — {F.e(ev['name'])}</h1>")
     h.append(f"<div class='sub'>{F.e(ev['phase'])} · {F.e(ev['dates'])} · {F.e(ev['venue'])}</div>")
     h.append(f"<div class='sub' style='margin-top:8px'>Prepared for: {F.e(ev['prepared_for'])} · "
              f"Generated {F.e(ctx.generated_at)}</div>")
 
-    # Executive summary
-    h.append("<h2>1. Executive Summary</h2>")
-    h.append(f"<div class='card'>"
-             f"<div class='kv'><span class='k'>Suppliers recorded</span><span>{total}</span></div>"
-             f"<div class='kv'><span class='k'>Fully rated</span><span>{len(rated)}</span></div></div>")
-    # 列出所有厂家（不止 Top N）：已评分的在前，未评分的排最后
-    ranking = sorted(ctx.suppliers,
-                     key=lambda s: (-(s["_score"] if s["_score"] is not None else -1), s["_company"]))
-    if ranking:
-        h.append("<h3>Top recommendations — all suppliers</h3><table><tr><th>#</th><th>Supplier</th><th>Booth</th>"
-                 "<th>Categories</th><th>Score</th><th>Tier</th></tr>")
-        for i, s in enumerate(ranking, 1):
-            score = s["_score"] if s["_score"] is not None else "not ranked"
-            h.append(f"<tr><td>{i}</td><td>{F.e(s['_company'])}</td><td>{F.e(s.get('boothNo',''))}</td>"
-                     f"<td>{F.e(', '.join(F.categories_en(s)))}</td><td>{F.e(score)}</td><td>{F.e(s['_tier'])}</td></tr>")
-        h.append("</table>")
-    risks = [s for s in ctx.suppliers if s["_blockers"]]
-    if risks:
-        h.append(f"<div class='warn'><b>{len(risks)} supplier(s)</b> recorded a key compliance item as "
-                 f"not available. They can only be shortlisted conditionally, subject to documentary verification.</div>")
-
-    # Methodology
-    h.append("<h2>2. Scope &amp; Methodology</h2><div class='card'>")
-    h.append("<h3>Scoring weights</h3><table><tr><th>Dimension</th><th>Weight</th><th>Meaning of 1 / 5</th></tr>")
-    meaning = {
-        "fit": "Clearly off-target / Strong match with the sourcing programme",
-        "compliance": "No evidence / Key documents complete and verifiable",
-        "quality": "High process risk / Mature QA, traceability and inspection",
-        "price": "Clearly overpriced / Clear advantage on a like-for-like basis",
-        "capacity": "Cannot meet demand / Comfortable capacity and lead-time headroom",
-        "communication": "Poor responsiveness / Strong technical dialogue and cooperation",
-    }
-    for code, zh, en in F.SCORE_DIMS:
-        h.append(f"<tr><td>{F.e(en)}</td><td>{F.e(ctx.weights.get(code,0))}%</td><td>{F.e(meaning.get(code,''))}</td></tr>")
-    h.append("</table>")
+    # 1. Supplier List —— 只留总数统计（Executive Summary 其余内容已删除）
+    h.append("<h2>1. Supplier List</h2><div class='card'>")
+    h.append(f"<div class='kv'><span class='k'>Suppliers recorded</span><span>{total}</span></div>")
     h.append("</div>")
 
-    # Catalogue
-    h.append("<h2>3. Supplier Catalogue</h2>")
-    for code, name, items in F.grouped_by_category(ctx):
+    # 2. Supplier Catalogue
+    h.append("<h2>2. Supplier Catalogue</h2>")
+    if not ctx.suppliers:
+        h.append("<p class='small mut'>No supplier recorded yet.</p>")
+    for _code, name, items in F.grouped_by_category(ctx):
         h.append(f"<h3>{F.e(name)} — {len(items)} supplier(s)</h3>")
         for s in items:
-            cls = "b-short" if s["_tier"] == "Shortlist" else "b-follow" if s["_tier"] == "Follow-up" \
-                else "b-res" if s["_tier"] == "Reserve" else "b-low" if s["_tier"] == "Low priority" else "b-draft"
-            h.append("<div class='card'>")
-            h.append(f"<div style='font-size:18px;font-weight:700'>{F.e(s['_company'])} "
-                     f"<span class='badge {cls}'>{F.e(s['_tier'])}"
-                     f"{(' · ' + str(s['_score'])) if s['_score'] is not None else ''}</span>"
-                     f"<span class='badge b-follow'>{F.e(F.source_en(s))}</span></div>")
-            h.append(f"<div class='kv'><span class='k'>Booth</span><span>{F.e(' / '.join(x for x in (s.get('hall'), s.get('area'), s.get('boothNo')) if x)) or '—'}</span></div>")
-            h.append(f"<div class='kv'><span class='k'>Contact</span><span>"
-                     f"{F.e(' / '.join(x for x in (s.get('contactName'), s.get('contactTitle')) if x)) or '—'}"
-                     f"{(' · ' + F.e(' · '.join(x for x in (s.get('phone'), s.get('wechat'), s.get('email')) if x))) if any((s.get('phone'), s.get('wechat'), s.get('email'))) else ''}</span></div>")
-            h.append(f"<div class='kv'><span class='k'>Products</span><span>{F.e(s.get('productDetails') or '—')}</span></div>")
-            h.append(f"<div class='kv'><span class='k'>Capacity / Markets</span><span>"
-                     f"{F.e(F.capacity_text(s))} · {F.e(', '.join(F.markets_en(s)) or '—')} · "
-                     f"EU/DE experience: {F.e(s.get('euGermanyExperience') or 'Unknown')}</span></div>")
-            if s.get("notes"):
-                h.append(f"<div class='kv'><span class='k'>Notes</span><span>{F.e(s['notes'])}</span></div>")
-            if s.get("nextAction"):
-                h.append(f"<div class='kv'><span class='k'>Next action</span><span>{F.e(s['nextAction'])}"
-                         f"{(' · due ' + F.e(s['nextActionDate'])) if s.get('nextActionDate') else ''}</span></div>")
-            if s["_state"] == "draft":
-                h.append(f"<div class='warn small'>Draft record — missing: {F.e(', '.join(s['_missing']))}</div>")
-            imgs = ctx.photos_by_supplier.get(s["id"]) or []
-            if imgs:
-                h.append("<div class='grid'>" + "".join(
-                    f"<img src='{_b64_image(p['file'])}' alt='{F.e(p.get('type'))}'>" for p in imgs) + "</div>")
-            h.append("</div>")
+            h.append(supplier_card_html(ctx, s))
+
+    # 3. Fair Summary —— 报告最后一项
+    h.append("<h2>3. Fair Summary</h2><div class='card'>")
+    paras = F.summary_paras(ctx.summary)
+    if paras:
+        h.append("".join(f"<p style='margin:0 0 12px;white-space:pre-wrap'>{F.e(p)}</p>" for p in paras))
+    else:
+        h.append("<p class='small mut'>No fair summary recorded.</p>")
+    h.append("</div>")
 
     h.append("<p class='small mut' style='margin-top:40px'>Generated by FairRecorder from on-site mobile "
              "records. Scores reflect field observations recorded at the fair and are not a substitute for "
@@ -435,9 +466,6 @@ def write_html(ctx: F.Context, path: Path) -> None:
     path.write_text("".join(h), encoding="utf-8")
 
 
-# --------------------------------------------------------------------------- #
-# DOCX report
-# --------------------------------------------------------------------------- #
 def write_docx(ctx: F.Context, path: Path) -> None:
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -483,7 +511,7 @@ def write_docx(ctx: F.Context, path: Path) -> None:
                     r.cells[i].width = Cm(w)
         return t
 
-    # Cover
+    # ---- Cover ----
     t = doc.add_heading("Supplier Report", level=0)
     t.alignment = WD_ALIGN_PARAGRAPH.LEFT
     para(ev["name"], size=14, bold=True)
@@ -493,81 +521,93 @@ def write_docx(ctx: F.Context, path: Path) -> None:
     para(f"Generated: {ctx.generated_at}", size=9, italic=True)
     doc.add_paragraph()
 
-    total = len(ctx.suppliers)
-    rated = [s for s in ctx.suppliers if s["_rankable"]]
-    drafts = [s for s in ctx.suppliers if s["_state"] == "draft"]
-    planned = [s for s in ctx.suppliers if s.get("source") == "planned"]
-    manual = [s for s in ctx.suppliers if s.get("source") == "manual"]
-    unvisited = [p for p in ctx.plans if p.get("status") != "visited"]
-    picks = F.top_picks(ctx)
-    planned_txt = f"{len(planned)} / {total - len(planned) - len(manual)} / {len(manual)}"
-
-    h1("1. Executive Summary")
-    table(["Metric", "Value"], [
-        ["Suppliers recorded", total],
-        ["Fully rated (all six dimensions)", len(rated)],
-    ], widths=[8.0, 8.0])
-    # 列出所有厂家（不止 Top N）：已评分的在前，未评分的排最后
-    ranking = sorted(ctx.suppliers,
-                     key=lambda s: (-(s["_score"] if s["_score"] is not None else -1), s["_company"]))
-    if ranking:
-        para("Top recommendations — all suppliers", size=11, bold=True)
-        table(["#", "Supplier", "Booth", "Categories", "Score", "Tier"],
-              [[i, s["_company"], s.get("boothNo", ""), ", ".join(F.categories_en(s)),
-                s["_score"] if s["_score"] is not None else "not ranked", s["_tier"]]
-               for i, s in enumerate(ranking, 1)],
-              widths=[0.8, 5.6, 1.9, 4.0, 1.5, 2.2])
-    risks = [s for s in ctx.suppliers if s["_blockers"]]
-    if risks:
-        para(f"Risk note: {len(risks)} supplier(s) recorded a key compliance item as not available. "
-             f"They can only be shortlisted conditionally, subject to documentary verification.", size=10)
-
+    # ---- 1. Supplier List ----
+    h1("1. Supplier List")
+    table(["Metric", "Value"], [["Suppliers recorded", len(ctx.suppliers)]], widths=[6.0, 6.0])
     doc.add_page_break()
-    h1("2. Scope & Methodology")
-    h2("2.1 Scoring weights")
-    meaning = {
-        "fit": "Clearly off-target / Strong match with the sourcing programme",
-        "compliance": "No evidence / Key documents complete and verifiable",
-        "quality": "High process risk / Mature QA, traceability and inspection",
-        "price": "Clearly overpriced / Clear advantage on a like-for-like basis",
-        "capacity": "Cannot meet demand / Comfortable capacity and lead-time headroom",
-        "communication": "Poor responsiveness / Strong technical dialogue and cooperation",
-    }
-    table(["Dimension", "Weight", "1 / 5 means"],
-          [[en, f"{ctx.weights.get(code, 0)}%", meaning.get(code, "")] for code, _, en in F.SCORE_DIMS],
-          widths=[5.0, 1.6, 9.4])
-    doc.add_page_break()
-    h1("3. Supplier Catalogue")
-    for code, name, items in F.grouped_by_category(ctx):
+
+    # ---- 2. Supplier Catalogue ----
+    h1("2. Supplier Catalogue")
+    if not ctx.suppliers:
+        para("No supplier recorded yet.", size=10, italic=True)
+    for _code, name, items in F.grouped_by_category(ctx):
         h2(f"{name} — {len(items)} supplier(s)")
         for s in items:
+            cards, by_hl, gallery = F.photo_buckets(ctx, s["id"])
+            notes = F.score_comments(s)
+            sc = s.get("score") or {}
             doc.add_heading(f"{s['_company']}  ·  {s['_tier']}"
                             + (f" ({s['_score']}/100)" if s["_rankable"] else " — draft, not ranked"),
                             level=3)
-            rows = [
+            contact = " / ".join(x for x in (s.get("contactName"), s.get("contactTitle")) if x) or "—"
+            ways = " / ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x) or "—"
+            table(["Field", "Value"], [
                 ["Booth", " / ".join(x for x in (s.get("hall"), s.get("area"), s.get("boothNo")) if x) or "—"],
-                ["Contact", " / ".join(x for x in (s.get("contactName"), s.get("contactTitle")) if x) or "—"],
-                ["Channels", " / ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x) or "—"],
-                ["Categories", ", ".join(F.categories_en(s))],
+                ["Contact", contact],
+                ["Channels", ways],
+                ["Categories", ", ".join(F.categories_en(s)) or "—"],
                 ["Products", s.get("productDetails") or "—"],
                 ["Capacity", F.capacity_text(s)],
                 ["Export markets", ", ".join(F.markets_en(s)) or "—"],
                 ["EU / DE experience", s.get("euGermanyExperience") or "Unknown"],
+                ["Source", F.source_en(s)],
                 ["Notes", s.get("notes") or "—"],
                 ["Next action", (s.get("nextAction") or "—")
                  + (f" (due {s.get('nextActionDate')})" if s.get("nextActionDate") else "")],
                 ["Record state", s["_state"] + (f" — missing {', '.join(s['_missing'])}" if s["_missing"] else "")],
-            ]
-            table(["Field", "Value"], rows, widths=[3.4, 12.6])
-            if s["_blockers"]:
-                para("Key compliance item(s) marked not available: " + ", ".join(s["_blockers"])
-                     + " — conditional only, pending documentary verification.", size=10, bold=True)
-            for p in (ctx.photos_by_supplier.get(s["id"]) or []):
-                try:
-                    doc.add_picture(p["report"], width=Cm(7.0))
-                except Exception:  # noqa: BLE001
-                    pass
+            ], widths=[3.4, 12.6])
+
+            if any(isinstance(sc.get(d[0]), (int, float)) for d in F.SCORE_DIMS):
+                table(["Dimension", "Weight", "Rating", "Comments"],
+                      [[en, f"{ctx.weights.get(code, 0)}%",
+                        f"{sc[code]}/5" if isinstance(sc.get(code), (int, float)) else "—",
+                        notes.get(code) or "—"] for code, _zh, en in F.SCORE_DIMS],
+                      widths=[2.6, 1.6, 2.0, 9.8])
+
+            card_rows_docx = F.namecard_rows(s)
+            if card_rows_docx or cards:
+                para("Name card", size=11, bold=True)
+                if card_rows_docx:
+                    table(["Field", "Value"], [list(r) for r in card_rows_docx], widths=[3.4, 12.6])
+                for p in cards:
+                    try:
+                        doc.add_picture(p["report"], width=Cm(7.0))
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            hl_items = F.highlights(s)
+            if hl_items:
+                para("Highlight products", size=11, bold=True)
+                for it in hl_items:
+                    para(it["title"] or "(untitled)", size=10.5, bold=True)
+                    if it["note"]:
+                        for ln in str(it["note"]).split("\n"):
+                            para(ln, size=10.5)
+                    for p in (by_hl.get(it["id"]) or []):
+                        try:
+                            doc.add_picture(p["report"], width=Cm(7.0))
+                        except Exception:  # noqa: BLE001
+                            pass
+
+            if gallery:
+                para("Photos", size=11, bold=True)
+                for p in gallery:
+                    try:
+                        doc.add_picture(p["report"], width=Cm(7.0))
+                    except Exception:  # noqa: BLE001
+                        pass
             doc.add_paragraph()
+
+    # ---- 3. Fair Summary（最后一项） ----
+    doc.add_page_break()
+    h1("3. Fair Summary")
+    paras = F.summary_paras(ctx.summary)
+    if paras:
+        for blk in paras:
+            for ln in str(blk).split("\n"):
+                para(ln, size=10.5)
+    else:
+        para("No fair summary recorded.", size=10, italic=True)
 
     para("Generated by FairRecorder from on-site mobile records. Scores reflect field observations recorded at "
          "the fair and are not a substitute for a factory audit or certificate verification.", size=9, italic=True)

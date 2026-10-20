@@ -23,7 +23,8 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "sample"
 SCHEMA = 2
-WEIGHTS = {"fit": 25, "compliance": 25, "quality": 15, "price": 15, "capacity": 10, "communication": 10}
+# v1.7：设计 / 质量 / 细节三项，权重合计 100
+WEIGHTS = {"design": 30, "quality": 50, "details": 20}
 DAY1 = "2026-10-23T18:00:00+08:00"
 DAY2 = "2026-10-24T19:30:00+08:00"
 KBCDAY = "2026-05-27T17:20:00+08:00"
@@ -31,18 +32,30 @@ KBCDAY = "2026-05-27T17:20:00+08:00"
 FAIR_A = "fair-2026-canton-140-phase2"
 FAIR_B = "fair-2026-kbc-shanghai"
 
+# 观展总结：报告最后一项原样输出这些段落（空行分段）
+FAIR_A_SUMMARY = (
+    "本次广交会二期共走访 8 家，集中在 A/B 区卫浴设备与建筑装饰材料两个展区。"
+    "整体感受是窄边框与超白玻已经成为标配，真正拉开差距的是型材收口与五金手感。\n\n"
+    "淋浴房整体：主流壁厚做到 1.2–1.5mm，几家头部厂开始推 1.0mm 超窄边框，"
+    "但配套 6mm 钢化的供应能力参差，需要单独确认。\n\n"
+    "待跟进：金莎（JS-8800）与德立（DL-S900）值得进入打样环节；"
+    "旭晖玻璃的 EN 12150 现场确认无法提供，本轮不纳入。"
+)
+
 FAIR_A_META = {
     "id": FAIR_A, "name": "第140届广交会 第二期", "nameEn": "140th Canton Fair — Phase II",
     "phase": "Phase II · Bathroom Equipment / Building & Decorative Materials",
     "city": "广州", "venue": "广交会展馆", "area": "卫浴设备",
     "startDate": "2026-10-23", "endDate": "2026-10-25",
     "slug": "2026-140th-canton-fair-phase-ii",
+    "summary": FAIR_A_SUMMARY,
 }
 FAIR_B_META = {
     "id": FAIR_B, "name": "2026 上海 KBC 厨卫展", "nameEn": "Kitchen & Bath China 2026",
     "phase": "Kitchen & Bath", "city": "上海", "venue": "上海新国际博览中心",
     "area": "厨房 / 卫浴", "startDate": "2026-05-26", "endDate": "2026-05-29",
     "slug": "2026-kitchen-bath-china",
+    "summary": "上海 KBC 主要看智能马桶与浴室柜，淋浴房厂商参展不多，两家的样品水平与广交会基本持平。",
 }
 
 
@@ -93,6 +106,67 @@ def sup(**kw):
     }
     s.update(kw)
     return s
+
+
+# --------------------------------------------------------------------------- #
+# v1.7 —— 三项评分 + 每项评语、名片信息、亮点产品
+# --------------------------------------------------------------------------- #
+DIM_COMMENTS = {
+    "design": {
+        5: "造型与配色契合系列定位，可以直接进方案",
+        4: "外观在线，个别线条偏保守，改模成本不高",
+        3: "造型偏老，需要重新开模或换面",
+        2: "设计与我们定位差距较大，短期不考虑",
+        1: "设计完全不对路",
+    },
+    "quality": {
+        5: "样品一致性好，焊缝与固化看不出瑕疵",
+        4: "整体做工稳，批次之间可能有轻微色差",
+        3: "做工一般，需要加严来料检验",
+        2: "工艺风险明显，不建议直接进入量产",
+        1: "工艺能力不足",
+    },
+    "details": {
+        5: "收口、磁条与五金手感都到位",
+        4: "细节处理不错，个别零件有毛刺",
+        3: "边角与密封是短板，需要升级模具",
+        2: "密封与收口问题较多",
+        1: "细节处理粗糙",
+    },
+}
+HIGHLIGHTS = {
+    "s-0001": [("Slimline 10mm 超窄边框", "边框做到 10mm，配 8mm 钢化；需确认 6mm 能否配套供应。")],
+    "s-0002": [("磁吸静音门锁 DL-M3", "关门噪音 30dB 以内，样机手感好，已索取寿命测试报告。")],
+    "s-0003": [("超白玻 8mm", "含铁量低于同行，透光偏白；价格每平米高约 3 USD。")],
+    "s-0101": [("LS-6600 简框系列", "整机做工不错，价格比广交会那批低约 12%。")],
+}
+
+
+def upgrade_v17(suppliers):
+    """把样本升级到 v1.7 口径：三项评分 + 评语、名片信息、亮点产品。
+
+    样本里保留了老六维评分的写法，正好顺带验证"旧数据导入后自动折算"这条路。
+    """
+    legacy = {"design": "fit", "details": "compliance"}
+    for s in suppliers:
+        sc = s.get("score") or {}
+        new = {"quality": sc.get("quality", 3)}
+        for key, old in legacy.items():
+            v = sc.get(key, sc.get(old))
+            new[key] = v if isinstance(v, int) else 3
+        s["score"] = new
+        s["scoreNotes"] = {d: DIM_COMMENTS[d].get(new.get(d, 3), "") for d in ("design", "quality", "details")}
+        s["namecard"] = {
+            "name": s.get("contactName", ""), "title": s.get("contactTitle", ""),
+            "phone": s.get("phone", ""), "mobile": s.get("phone", ""),
+            "email": s.get("email", ""), "website": s.get("website", ""),
+            "address": "", "note": "名片为中文印刷；抬头英文名以录入为准",
+        }
+        s["highlights"] = [
+            {"id": f"{s['id']}-hl{i + 1}", "title": t, "note": n, "createdAt": s.get("updatedAt", DAY1)}
+            for i, (t, n) in enumerate(HIGHLIGHTS.get(s["id"], []))
+        ]
+    return suppliers
 
 
 # --------------------------------------------------------------------------- #
@@ -409,8 +483,8 @@ def main() -> None:
         old.unlink()
 
     # ---- 展会 A：广交会第二期，两天两次导出 ----
-    day1 = [copy.deepcopy(s) for s in (S1, S2, S3, S4, S6)]
-    day2_src = [copy.deepcopy(s) for s in (S5, S7, S8)]
+    day1 = upgrade_v17([copy.deepcopy(s) for s in (S1, S2, S3, S4, S6)])
+    day2_src = upgrade_v17([copy.deepcopy(s) for s in (S5, S7, S8)])
     photosA = build_photos(day1 + day2_src)
 
     # day 2 also revises S1 (booth corrected + note) — exercises "newest wins" upsert.
@@ -430,7 +504,7 @@ def main() -> None:
                    day2_src + [s1b], PLANS, photosA, DAY2, "daily", FAIR_A_META)
 
     # ---- 展会 B：上海 KBC，完全独立的一份导出 ----
-    fairB = [copy.deepcopy(s) for s in (S9, S10)]
+    fairB = upgrade_v17([copy.deepcopy(s) for s in (S9, S10)])
     for s in fairB:
         s["createdAt"] = KBCDAY
         s["updatedAt"] = KBCDAY

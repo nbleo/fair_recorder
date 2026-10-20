@@ -288,6 +288,9 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
   <div class="field"><label>主要展区</label><input id="fArea" type="text" placeholder="例如 卫浴设备 / 建筑装饰材料"></div>
   <div class="field"><label>默认展馆</label><select id="fHall"></select></div>
   <div class="field"><label>备注</label><textarea id="fNote" placeholder="例如 重点看淋浴房整体与钢化玻璃"></textarea></div>
+  <div class="field"><label>观展总结（多段文本，会原样排进英文报告的最后一项）</label>
+    <textarea id="fSummary" style="min-height:200px" placeholder="例如：本次共走访 32 家，整体感受到三个趋势……&#10;&#10;淋浴房整体：型材壁厚普遍做到 1.2–1.5mm，玻璃基本标配 6mm 钢化……&#10;&#10;待跟进：A 公司可做 1.0mm 超窄边框，但需要确认 KTW 证书范围……"></textarea>
+    <div class="tiny muted" style="margin-top:6px">空行分段。中英文混写也可以，报告里按段落照原样输出。</div></div>
   <div class="btn-row" style="margin-top:14px">
     <button class="btn" id="fCancel">取消</button>
     <button class="btn btn-accent" id="fSave">保存并使用</button>
@@ -530,8 +533,8 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 <!-- ============ REPORT ============ -->
 <section id="scr-report" class="hide">
   <div class="banner banner-info">
-    <div>📄 在手机上直接生成<b>英文报告</b>（与电脑端脚本同一套口径：权重、分层、合规证据措辞一致），
-      含照片、对比矩阵与重点推荐，可分享、打印或存成 PDF。</div>
+    <div>📄 在手机上直接生成<b>英文报告</b>（与电脑端脚本同一套口径：权重、分层措辞一致），
+      结构为 Supplier List → Supplier Catalogue → Fair Summary，照片、评分评语、名片与亮点产品全部内嵌。</div>
   </div>
 
   <div class="sec">报告抬头（封面上的 Prepared for）</div>
@@ -549,15 +552,6 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
     <div class="tiny muted" style="margin-top:8px" id="rpScopeHint"></div>
   </div>
 
-  <div class="sec">重点推荐条数</div>
-  <div class="card">
-    <div class="chips" id="rpTop">
-      <button class="chip" data-top="3">Top 3</button>
-      <button class="chip" data-top="5">Top 5</button>
-      <button class="chip" data-top="10">Top 10</button>
-    </div>
-  </div>
-
   <div class="sec">照片</div>
   <div class="card">
     <div class="chips" id="rpPhoto">
@@ -569,18 +563,17 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
   <div class="sec">内容概览</div>
   <div id="rpSummary" class="card tiny muted">正在统计…</div>
 
-  <button class="btn btn-primary" id="btnRpPreview" style="margin-bottom:12px">👁　预览英文报告</button>
-  <button class="btn btn-accent" id="btnRpHtml" style="margin-bottom:12px">📄 导出 / 分享 HTML 报告</button>
+  <button class="btn btn-primary" id="btnRpHtml" style="margin-bottom:12px">📄　导出 / 分享 HTML 报告</button>
+  <button class="btn btn-accent" id="btnRpDocx" style="margin-bottom:12px">📝 导出 / 分享 DOCX 报告</button>
   <div class="btn-row" style="margin-bottom:12px">
     <button class="btn" id="btnRpXlsx">📊 导出 Excel</button>
     <button class="btn" id="btnRpCsv">🗂 导出 CSV</button>
   </div>
   <div class="tiny muted" style="margin-bottom:16px;line-height:1.7">
-    iPhone 分享面板可选「存储到文件」或发到微信；想要 PDF：先「预览英文报告」，
-    再点报告里的 <b>Print / Save as PDF</b>，在打印预览中双指放大即可存成 PDF。<br>
-    需要带公司抬头的 DOCX / XLSX，回到电脑把导出的 ZIP 放进 <b>inbox/</b> 跑
-    <b>build_report.py</b> 即可。
-  </div>
+    HTML 报告：单文件、双击即看，照片内嵌，适合微信发人和当场翻。<br>
+    DOCX 报告：Word / WPS 直接打开，可以接着改、加公司抬头再转 PDF —— 给总部发这份。<br>
+    iPhone 分享面板可选「存储到文件」或发到微信；HTML 报告里点右上角
+    <b>Print / Save as PDF</b> 可以直接存成 PDF。
   <div id="rpResult" class="card hide"></div>
 </section>
 
@@ -593,6 +586,16 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
     <div style="margin-top:10px" class="btn-row">
       <button class="btn" onclick="go('fairs')">🎪 切换展会</button>
       <button class="btn" onclick="editCurrentFair()">✏️ 编辑本展会</button>
+    </div>
+  </div>
+  <div class="sec">观展总结</div>
+  <div class="card">
+    <div class="tiny muted" id="setSummaryTxt">尚未填写。</div>
+    <div style="margin-top:10px">
+      <button class="btn" onclick="editCurrentFair()">✍️ 撰写 / 修改观展总结</button>
+    </div>
+    <div class="tiny muted" style="margin-top:8px">
+      多段文本，会按段落原样排进英文报告的最后一项。中英文混写也可以。
     </div>
   </div>
   <div class="sec">展会默认值</div>
@@ -613,12 +616,13 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
   <div class="field"><label>快速套用</label>
     <div class="chips" id="setWPreset">
       <button class="chip" data-w="default">均衡（默认）</button>
-      <button class="chip" data-w="compliance">合规优先</button>
-      <button class="chip" data-w="price">成本优先</button>
-      <button class="chip" data-w="capacity">交期产能优先</button>
+      <button class="chip" data-w="design">外观优先</button>
+      <button class="chip" data-w="quality">质量优先</button>
+      <button class="chip" data-w="details">细节优先</button>
     </div>
     <div class="tiny muted" style="margin-top:6px">
-      套用后仍可微调，记得点「保存」。权重会随备份一起上传，其他设备同步后自动一致。
+      每个维度按 1–5 星打分，权重合计必须为 100%。套用后仍可微调，记得点「保存」。
+      权重会随备份一起上传，其他设备同步后自动一致。
     </div>
   </div>
   <div id="setWeights"></div>
@@ -650,7 +654,7 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 "use strict";
 /* ============================ 常量 ============================ */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
 
 /* 展会预设：只预填城市/场馆/展区，不限制品类，任何展会都能自建 */
 const FAIR_PRESETS = [
@@ -698,16 +702,18 @@ const CSTAT = [
   ["document_seen","现场看到文件","Document seen"],["copy_received","已取得副本","Copy received"],
   ["not_available","无/不适用","Not available"]
 ];
+/* v1.7 起评分改为三项：Design / Quality / Details，每项 1–5 星。
+   旧的六维记录（fit / compliance / price / capacity / communication）不丢，
+   首次读取时按 LEGACY_SCORE_MAP 折算到新维度（见 migrateScore）。 */
 const SCORE_DIMS = [
-  ["fit","产品与技术匹配度","Product & Technical Fit"],
-  ["compliance","合规完备度","Compliance Readiness"],
-  ["quality","质量与工艺成熟度","Quality & Process Maturity"],
-  ["price","价格竞争力","Price Competitiveness"],
-  ["capacity","产能与交期","Capacity & Delivery"],
-  ["communication","沟通配合度","Communication & Cooperation"]
+  ["design","设计与外观","Design"],
+  ["quality","质量与工艺","Quality"],
+  ["details","细节做工","Details"]
 ];
-const DEFAULT_WEIGHTS = {fit:25, compliance:25, quality:15, price:15, capacity:10, communication:10};
-const PHOTO_TYPES = [["booth","展位"],["namecard","名片"],["product","产品"],["certificate","证书"],["other","其他"]];
+const LEGACY_SCORE_MAP = {design:"fit", details:"compliance"};
+const DEFAULT_WEIGHTS = {design:30, quality:50, details:20};
+const PHOTO_TYPES = [["booth","展位"],["namecard","名片"],["product","产品"],
+  ["highlight","亮点产品"],["certificate","证书"],["other","其他"]];
 
 const FIELDS = [
   {sec:"公司信息", items:[
@@ -718,12 +724,12 @@ const FIELDS = [
     {k:"boothNo",label:"展位号",type:"text",norm:"booth"}
   ]},
   {sec:"联系人", items:[
-    {k:"contactName",label:"姓名",type:"text",req:true},
+    {k:"contactName",label:"姓名（必填）",type:"text",req:true},
     {k:"contactTitle",label:"职位",type:"select",opts:TITLES},
-    {k:"phone",label:"手机",type:"tel"},
-    {k:"wechat",label:"微信",type:"text"},
-    {k:"email",label:"邮箱",type:"email"},
-    {k:"website",label:"网址",type:"url"}
+    {k:"phone",label:"手机（选填）",type:"tel"},
+    {k:"wechat",label:"微信（选填）",type:"text"},
+    {k:"email",label:"邮箱（选填）",type:"email"},
+    {k:"website",label:"网址（选填）",type:"url"}
   ]},
   {sec:"产品", items:[
     {k:"categories",label:"品类（可多选）",type:"chips",opts:CATEGORIES,req:true},
@@ -996,12 +1002,23 @@ function newSupplier(extra){
     priceMin:null, priceMax:null, currency:"CNY", priceUnit:"", incoterm:"Unknown", priceBasis:"",
     leadTimeDays:null, capacityValue:null, capacityUnit:"",
     exportMarkets:[], euGermanyExperience:"Unknown",
-    compliance:{}, score:{}, photoIds:[],
+    compliance:{}, score:{}, scoreNotes:{}, photoIds:[],
+    /* 名片原文（v1.7）：拍了名片照片后手抄/口述的关键字段，和联系人字段分开存，
+       因为名片上的抬头常常跟实际对接人不是一个人。 */
+    namecard:{ name:"", title:"", phone:"", mobile:"", email:"", website:"", address:"", note:"" },
+    /* 亮点产品（v1.7）：一条 = 一个值得记住的单品，含多张照片 + 文字说明。
+       存成 supplier 里的嵌套数组而不是新的 objectStore：无需改 schema，
+       也能被现有的 buildBundle / 云同步 / ZIP 导入导出整包带走。 */
+    highlights:[],
     followUpStatus:"new", nextAction:"", nextActionDate:"", notes:"",
     createdAt:now(), updatedAt:now(), deletedAt:null
   };
   for(const k of COMPLIANCE) s.compliance[k[0]]={status:"unknown",certNo:"",note:""};
   Object.assign(s, extra||{});
+  /* 老 ZIP / 老记录可能没有这些字段，补默认值，免得后面到处判空 */
+  if(!s.scoreNotes || typeof s.scoreNotes!=="object") s.scoreNotes={};
+  if(!s.namecard || typeof s.namecard!=="object") s.namecard={name:"",title:"",phone:"",mobile:"",email:"",website:"",address:"",note:""};
+  if(!Array.isArray(s.highlights)) s.highlights=[];
   s.companyKey=normCompany(s.companyNameZh||s.companyNameEn); s.boothKey=normBooth(s.boothNo);
   return s;
 }
@@ -1010,15 +1027,27 @@ function touch(s){ s.updatedAt=now(); s.companyKey=normCompany(s.companyNameZh||
 function missing(s){
   const m=[];
   if(!s.companyNameZh && !s.companyNameEn) m.push("公司名");
+  /* v1.7：联系人只要求有姓名 —— 现场很多摊位只递名片、不加微信，
+     硬要手机号只会逼大家编一个，反而污染后续跟进。手机 / 邮箱 / 微信均为选填。 */
   if(!s.contactName) m.push("联系人");
-  if(!s.phone && !s.wechat && !s.email) m.push("联系方式");
   if(!s.categories || !s.categories.length) m.push("品类");
   if(!s.photoIds || !s.photoIds.length) m.push("照片");
   return m;
 }
+/* 六维老数据 → 三维新口径。只读时补齐内存副本，不改原始字段；
+   用户下次点保存（touch→put）时自然落盘，云端同步跟着一起升级。 */
+function migrateScore(s){
+  const sc = s.score || (s.score={});
+  if(!sc || typeof sc!=="object") return sc;
+  for(const [nw, old] of Object.entries(LEGACY_SCORE_MAP)){
+    if(sc[nw]==null && typeof sc[old]==="number") sc[nw]=sc[old];
+  }
+  return sc;
+}
 function scoreFilled(s){ return SCORE_DIMS.every(d=>s.score && typeof s.score[d[0]]==="number"); }
 function stateOf(s){ if(missing(s).length) return "draft"; return scoreFilled(s)?"rated":"complete"; }
 function weightedScore(s, w){
+  migrateScore(s);
   if(!scoreFilled(s)) return null;
   let t=0; for(const d of SCORE_DIMS) t += (w[d[0]]||0) * (s.score[d[0]]/5);
   return Math.round(t*10)/10;
@@ -1119,6 +1148,8 @@ async function addPhoto(supplierId, file, type, opts){
   const big = (type==="namecard"||type==="certificate") ? await compress(file,2000,0.82) : await compress(file,1600,0.78);
   const thumb = await compress(file,320,0.7);
   const p={ id:uid(), fairId:curFairId(), supplierId, type:type||"product", blob:big, thumbBlob:thumb,
+    /* 亮点产品照片用 highlightId 记住属于哪一条；普通照片为 null */
+    highlightId:(opts && opts.highlightId) || null,
     w:0,h:0,size:big.size, sha256:await sha256Hex(big), createdAt:now() };
   await put("photos", p);
   const s=await get("suppliers", supplierId);
@@ -1156,12 +1187,18 @@ async function refresh(){
   if(FAIR && !FAIRS.some(f=>f.id===FAIR.id)) FAIR=null;
   const fid=curFairId();
   const inFair = (x)=>!fid || x.fairId===fid || (!x.fairId && !fid);
+  /* 老版本记录用的是六维评分，这里统一折算到 v1.7 的三维口径，
+     否则所有既有的已评分厂家会一夜之间变成"未评分"。 */
+  s.forEach(migrateScore);
   SUPPLIERS=s.filter(x=>!x.deletedAt && inFair(x));
   PLANS=p.filter(x=>!x.deletedAt && inFair(x));
   PHOTOS=ph.filter(x=>!x.deletedAt && inFair(x));
 }
 /* 切换当前展会 */
 async function selectFair(id){
+  /* 必须先刷新：编辑展会保存后，FAIRS 里还留着保存前那一份缓存对象，
+     直接用它的话刚改的字段（比如观展总结）在当前会话里读不出来。 */
+  await refresh();
   let f=FAIRS.find(x=>x.id===id);
   if(!f) f=await get("fairs", id);     // 刚新建的展会还没进 FAIRS 缓存
   if(!f) return;
@@ -1476,9 +1513,10 @@ function renderFairNew(){
     $("#fStart").value=f.startDate||""; $("#fEnd").value=f.endDate||"";
     $("#fCity").value=f.city||""; $("#fVenue").value=f.venue||""; $("#fArea").value=f.area||"";
     $("#fHall").value=f.defaultHall||"A区"; $("#fNote").value=f.notes||"";
+    $("#fSummary").value=f.summary||"";
     $("#fAdvanced").classList.remove("hide");
   }else{
-    ["#fName","#fNameEn","#fPhase","#fStart","#fEnd","#fCity","#fVenue","#fArea","#fNote"]
+    ["#fName","#fNameEn","#fPhase","#fStart","#fEnd","#fCity","#fVenue","#fArea","#fNote","#fSummary"]
       .forEach(s=>{ $(s).value=""; });
     $("#fHall").value="A区";
     $("#fAdvanced").classList.add("hide");
@@ -1490,7 +1528,8 @@ function renderFairNew(){
     const data={ name, nameEn:$("#fNameEn").value.trim(), phase:$("#fPhase").value.trim(),
       startDate:$("#fStart").value, endDate:$("#fEnd").value, city:$("#fCity").value.trim(),
       venue:$("#fVenue").value.trim(), area:$("#fArea").value.trim(),
-      defaultHall:$("#fHall").value, notes:$("#fNote").value.trim() };
+      defaultHall:$("#fHall").value, notes:$("#fNote").value.trim(),
+      summary:$("#fSummary").value.trim() };
     let f2;
     if(EDIT_FAIR){ f2=Object.assign(EDIT_FAIR, data); await put("fairs", touchFair(f2)); }
     else { f2=newFair(data); await put("fairs", f2); }
@@ -1561,7 +1600,7 @@ function renderEdit(id){
 
   let h=`<div class="card">`;
   if(st==="draft") h+=`<div class="banner banner-warn"><div>📝 草稿 —— 还缺：<b>${esc(miss.join("、"))}</b></div></div>`;
-  else if(st==="complete") h+=`<div class="banner banner-info"><div>✅ 信息完整。填满六项评分后才会进入 Top 排名。</div></div>`;
+  else if(st==="complete") h+=`<div class="banner banner-info"><div>✅ 信息完整。Design / Quality / Details 三项评分填满后才会进入排名。</div></div>`;
   else h+=`<div class="banner banner-ok"><div>🏆 综合分 <b>${t}</b> / 100 · ${tierOf(t)}</div></div>`;
   if(blk.length) h+=`<div class="banner banner-warn"><div>⚠️ 关键合规标为「无/不适用」：${esc(blk.join("、"))} —— 只能标为 Conditional，需先验证。</div></div>`;
   h+=`<div class="kv"><span class="k">来源</span><span class="v">${s.source==="planned"?"预拜访计划":"现场发现"}</span></div>`;
@@ -1575,23 +1614,191 @@ function renderEdit(id){
   for(const sec of FIELDS){
     f+=`<div class="sec">${sec.sec}</div>`;
     for(const it of sec.items) f+=renderField(s, it);
+    /* 名片紧跟联系人、亮点产品紧跟产品线：现场就是按这个顺序翻资料的 */
+    if(sec.sec==="联系人") f+=namecardBlock(s);
+    if(sec.sec==="产品") f+=highlightsBlock(s);
   }
   /* 「合规资质」板块已于 v1.3 从录入页移除：现场拿不到证书原件，八项逐个点
-     只会拖慢录入。合规改由「合规完备度」一项主观评分表达；资质核验放在
-     打样 / 下单前由总部统一收，收不到就是收不到，不该由现场记录背书。
-     旧记录里的 compliance 字段保留，报告照常读出。 */
-  f+=`<div class="sec">评分（1–5，全部填满才参与排名）</div>`;
+     只会拖慢录入。资质核验放在打样 / 下单前由总部统一收，收不到就是收不到，
+     不该由现场记录背书。旧记录里的 compliance 字段保留，报告照常读出。 */
+  f+=`<div class="sec">评分（每项 1–5 星，全部填满才参与排名）</div>`;
+  f+=`<div class="card"><div class="tiny muted">星数对应这三项在设置里的权重，改权重到「设置 → 评分权重」。
+    每项下面都可以写一句评语，会原样进报告。</div></div>`;
   for(const d of SCORE_DIMS){
     const v=s.score? s.score[d[0]] : null;
+    const note=((s.scoreNotes||{})[d[0]])||"";
     f+=`<div class="score-row" data-d="${d[0]}">
       <span class="lbl">${d[1]}<div class="tiny muted">${d[2]}</div></span>
       <div class="stars">${[1,2,3,4,5].map(n=>`<button class="star" data-n="${n}" aria-pressed="${v===n}">${n}</button>`).join("")}</div>
       <span class="w">${SETTINGS.weights[d[0]]}%</span>
+    </div>
+    <div class="field" style="margin:-6px 0 12px">
+      <label>${d[2]} — Comments</label>
+      <textarea data-sn="${d[0]}" style="min-height:74px" placeholder="为什么给这个分数？工艺、材料、手感……">${esc(note)}</textarea>
     </div>`;
   }
   $("#editForm").innerHTML=f;
   bindEdit(s);
+  bindNamecard(s);
+  bindHighlights(s);
   renderPhotos(s);
+}
+
+/* ---------------------- 名片 ---------------------- */
+const NAMECARD_FIELDS=[
+  ["name","姓名 / Name"],["title","职位 / Title"],["phone","电话 / Tel"],
+  ["mobile","手机 / Mobile"],["email","邮箱 / Email"],["website","网址 / Web"],
+  ["address","地址 / Address"],["note","其它 / Other"]
+];
+function namecardBlock(s){
+  const nc=s.namecard||{};
+  const cards=photosOf(s.id).filter(p=>p.type==="namecard");
+  let h=`<div class="sec">名片</div><div class="card">`;
+  h+=`<div class="btn-row" style="margin-bottom:10px">
+    <button class="btn btn-accent" id="ncCam" style="flex:1">📇 拍摄名片</button>
+    <button class="btn btn-sm" id="ncPick" style="flex:1">🖼 从相册选</button>
+  </div>`;
+  if(cards.length){
+    const urls=[], blobs=[];
+    h+=`<div class="photos">`+cards.map((p,i)=>{
+      const u=URL.createObjectURL(p.thumbBlob||p.blob); urls.push(u); blobs.push(p.blob);
+      return `<div class="ph"><img src="${u}" alt="">
+        <button class="imgbtn" data-nci="${i}" aria-label="放大查看"></button>
+        <button class="x" data-ncdel="${p.id}" aria-label="删除名片照片">✕</button></div>`;
+    }).join("")+`</div><div class="tiny muted" style="margin:6px 0 12px">已存 ${cards.length} 张名片照片，点开可放大。</div>`;
+    setTimeout(()=>urls.forEach(u=>URL.revokeObjectURL(u)), 60000);
+    setTimeout(()=>{ ncBindPhotos(cards, blobs); }, 0);
+  }
+  h+=NAMECARD_FIELDS.map(([k,l])=>
+    `<div class="field"><label>${l}</label><input type="text" data-nc="${k}" value="${esc(nc[k]||"")}" placeholder="照名片抄，可留空"></div>`).join("");
+  h+=`<div class="tiny muted" style="margin-top:6px">名片上的抬头常常跟实际对接人不是一个人，所以这里单独记一份，不覆盖上面的联系人。</div>`;
+  h+=`</div>`;
+  return h;
+}
+/* 名片缩略图在插入 DOM 之后才绑得上事件，用一个延迟包一下 */
+function ncBindPhotos(cards, blobs){
+  $$("#editForm [data-nci]").forEach(b=>{
+    let guard=false;
+    const go=()=>{ if(guard) return; guard=true; setTimeout(()=>{guard=false;},500);
+      openLightbox(blobs, Number(b.dataset.nci||0)); };
+    b.addEventListener("click", go);
+    b.addEventListener("touchend",(e)=>{ e.preventDefault(); go(); });
+  });
+  $$("#editForm [data-ncdel]").forEach(b=>b.onclick=async()=>{
+    await del("photos", b.dataset.ncdel);
+    const s=SUPPLIERS.find(x=>x.id===CUR); if(!s) return;
+    s.photoIds=(s.photoIds||[]).filter(x=>x!==b.dataset.ncdel);
+    await save(s); await refresh(); renderEdit(s.id);
+  });
+}
+function bindNamecard(s){
+  $$("#editForm [data-nc]").forEach(el=>{
+    const k=el.dataset.nc;
+    const h=async()=>{ s.namecard=s.namecard||{}; s.namecard[k]=el.value; await save(s); };
+    el.oninput=h; el.onchange=h;
+  });
+  const cam=$("#ncCam"), pick=$("#ncPick");
+  if(cam) cam.onclick=()=>pickPhoto(async(files)=>{
+    for(const f of files){ try{ await addPhoto(s.id, f, "namecard", {gallery:true}); }
+      catch(e){ toast("名片保存失败："+e.message,4000); } }
+    await refresh(); renderEdit(s.id); toast("已保存名片", 2500);
+  });
+  if(pick) pick.onclick=()=>pickPhoto(async(files)=>{
+    for(const f of files){ try{ await addPhoto(s.id, f, "namecard"); }
+      catch(e){ toast("名片保存失败："+e.message,4000); } }
+    await refresh(); renderEdit(s.id);
+  }, true);
+}
+
+/* ---------------------- 亮点产品 ---------------------- */
+/* 一条亮点 = 一个值得单独记住的单品：多张照片 + 一段文字说明。
+   存在 supplier.highlights 里（嵌套数组），photos 通过 highlightId 反查归属，
+   这样不用新增 objectStore，同步 / 导出 / 云备份全部照旧。 */
+function hlPhotos(hid){
+  return PHOTOS.filter(p=>p.highlightId===hid && !p.deletedAt)
+    .sort((a,b)=>(a.createdAt<b.createdAt?-1:1));
+}
+function highlightsBlock(s){
+  const list=s.highlights||[];
+  let h=`<div class="sec">亮点产品</div>`;
+  h+=`<div class="card"><button class="btn btn-accent" id="hlAdd" style="margin-bottom:10px">＋ 添加亮点产品</button>
+    <div class="tiny muted">现场看到有意思的单品就记一条：先拍照，再补一句为什么值得记。每条不限照片张数。</div></div>`;
+  for(const it of list){
+    const ph=hlPhotos(it.id);
+    h+=`<div class="card" data-h="${it.id}">
+      <div class="btn-row" style="margin-bottom:8px">
+        <input type="text" data-ht="${it.id}" value="${esc(it.title||"")}" placeholder="产品名 / 型号" style="flex:1">
+        <button class="btn btn-danger btn-sm" data-hdel="${it.id}" aria-label="删除这条亮点">✕</button>
+      </div>
+      <div class="field" style="margin-bottom:8px">
+        <textarea data-hnote="${it.id}" style="min-height:88px" placeholder="亮点说明：材质、工艺、关键尺寸、与同类相比强在哪……">${esc(it.note||"")}</textarea>
+      </div>`;
+    if(ph.length){
+      const urls=[], blobs=[];
+      h+=`<div class="photos hlph">`+ph.map((p,i)=>{
+        const u=URL.createObjectURL(p.thumbBlob||p.blob); urls.push(u); blobs.push(p.blob);
+        return `<div class="ph"><img src="${u}" alt="">
+          <button class="imgbtn" data-hpi="${it.id}:${i}" aria-label="放大查看"></button>
+          <button class="x" data-hpd="${p.id}" aria-label="删除照片">✕</button></div>`;
+      }).join("")+`</div>`;
+      setTimeout(()=>urls.forEach(u=>URL.revokeObjectURL(u)), 60000);
+      setTimeout(()=>hl_place(it.id, blobs), 0);
+    }
+    h+=`<div class="btn-row">
+      <button class="btn btn-sm" data-hcam="${it.id}" style="flex:1">📷 拍照</button>
+      <button class="btn btn-sm" data-hpick="${it.id}" style="flex:1">🖼 相册（可多选）</button>
+    </div></div>`;
+  }
+  return h;
+}
+function hl_place(hid, blobs){
+  $$(`#editForm [data-hpi^="${hid}:"]`).forEach(b=>{
+    let guard=false;
+    const go=()=>{ if(guard) return; guard=true; setTimeout(()=>{guard=false;},500);
+      openLightbox(blobs, Number(String(b.dataset.hpi).split(":")[1]||0)); };
+    b.addEventListener("click", go);
+    b.addEventListener("touchend",(e)=>{ e.preventDefault(); go(); });
+  });
+}
+function bindHighlights(s){
+  $$("#editForm [data-ht]").forEach(el=>el.oninput=async()=>{
+    const it=(s.highlights||[]).find(x=>x.id===el.dataset.ht); if(!it) return;
+    it.title=el.value; await save(s);
+  });
+  $$("#editForm [data-hnote]").forEach(el=>el.oninput=async()=>{
+    const it=(s.highlights||[]).find(x=>x.id===el.dataset.hnote); if(!it) return;
+    it.note=el.value; await save(s);
+  });
+  $$("#editForm [data-hdel]").forEach(b=>b.onclick=async()=>{
+    const hid=b.dataset.hdel;
+    const it=(s.highlights||[]).find(x=>x.id===hid);
+    if(it && (it.title||it.note) && !confirm("删除这条亮点产品及其照片？")) return;
+    for(const p of hlPhotos(hid)){ await del("photos", p.id); s.photoIds=(s.photoIds||[]).filter(x=>x!==p.id); }
+    s.highlights=(s.highlights||[]).filter(x=>x.id!==hid);
+    await save(s); await refresh(); renderEdit(s.id); toast("已删除亮点产品");
+  });
+  const add=$("#hlAdd");
+  if(add) add.onclick=async()=>{
+    s.highlights=s.highlights||[];
+    s.highlights.push({id:uid(), title:"", note:"", createdAt:now()});
+    await save(s); await refresh(); renderEdit(s.id);
+  };
+  $$("#editForm [data-hcam]").forEach(b=>b.onclick=()=>pickPhoto(async(files)=>{
+    for(const f of files){ try{ await addPhoto(s.id, f, "highlight", {gallery:true, highlightId:b.dataset.hcam}); }
+      catch(e){ toast("照片保存失败："+e.message,4000); } }
+    await refresh(); renderEdit(s.id);
+  }));
+  $$("#editForm [data-hpick]").forEach(b=>b.onclick=()=>pickPhoto(async(files)=>{
+    for(const f of files){ try{ await addPhoto(s.id, f, "highlight", {highlightId:b.dataset.hpick}); }
+      catch(e){ toast("照片保存失败："+e.message,4000); } }
+    await refresh(); renderEdit(s.id);
+  }, true));
+  $$("#editForm [data-hpd]").forEach(b=>b.onclick=async()=>{
+    await del("photos", b.dataset.hpd);
+    const cur=SUPPLIERS.find(x=>x.id===CUR); if(!cur) return;
+    cur.photoIds=(cur.photoIds||[]).filter(x=>x!==b.dataset.hpd);
+    await save(cur); await refresh(); renderEdit(s.id);
+  });
 }
 function renderField(s, it){
   const v = s[it.k];
@@ -1649,6 +1856,12 @@ function bindEdit(s){
     };
     el.oninput=handler; el.onchange=handler;
   });
+  /* 每项评分后面的 Comments（v1.7）：评的是"为什么给这个分"，比分数本身更值钱 */
+  $$("#editForm [data-sn]").forEach(el=>{
+    const k=el.dataset.sn;
+    const on=async()=>{ s.scoreNotes=s.scoreNotes||{}; s.scoreNotes[k]=el.value; await save(s); };
+    el.oninput=on; el.onchange=on;   /* 不 re-render，否则每敲一个字都会丢焦点 */
+  });
   $$("#editForm .comp").forEach(c=>{
     const key=c.dataset.c;
     c.querySelectorAll(".chip").forEach(b=>b.onclick=async()=>{
@@ -1680,8 +1893,11 @@ async function save(s){
 /* 照片全屏查看：点开看大图、双击再放大一倍、左右滑动切换、点空白处或 ✕ 关闭。
    与导出的英文报告里的放大交互保持一致。srcs 为大图 URL 数组（与缩略图顺序一致）。 */
 let FRLB=null;
-function openLightbox(srcs, start){
-  const list=(srcs||[]).filter(Boolean);
+/* 传入 Blob 而不是提前建好的 objectURL：URL.createObjectURL 出来的地址一旦被 revoke
+   （或页面重绘后提前回收）就会变成一张裂图，浏览器只剩下「?」占位。
+   这里改为打开时才创建、切换和关闭时立刻回收，因此任何时刻都能拿到原图。 */
+function openLightbox(items, start){
+  const list=(items||[]).filter(Boolean);
   if(!list.length) return;
   if(!FRLB){
     const d=document.createElement("div"); d.id="frlb";
@@ -1693,11 +1909,21 @@ function openLightbox(srcs, start){
       +"<div class='lbhint'>点空白关闭 · 双击放大 · 左右滑动切换</div>";
     document.body.appendChild(d);
     const im=d.querySelector("#frlbImg"), st=d.querySelector("#frlbStage"), cnt=d.querySelector("#frlbCnt");
-    let list0=[], idx=0, lastTap=0, sx=0, sy=0, moved=false, swiping=false;
-    const show=(i)=>{ idx=(i+list0.length)%list0.length; im.src=list0[idx];
-      d.classList.remove("zoomed"); cnt.textContent=(idx+1)+" / "+list0.length; };
+    let list0=[], idx=0, lastTap=0, sx=0, sy=0, moved=false, swiping=false, curUrl=null;
+    const release=()=>{ if(curUrl){ try{ URL.revokeObjectURL(curUrl); }catch(e){} curUrl=null; } };
+    const show=(i)=>{
+      idx=(i+list0.length)%list0.length;
+      release();
+      const it=list0[idx];
+      if(it instanceof Blob){ curUrl=URL.createObjectURL(it); im.src=curUrl; }
+      else im.src=String(it);
+      d.classList.remove("zoomed");
+      cnt.textContent=(idx+1)+" / "+list0.length;
+    };
+    im.onerror=()=>{ toast("这张照片没能打开，可能已损坏", 3000); };
+    const doClose=()=>{ d.classList.remove("on"); d.classList.remove("zoomed"); release(); };
     FRLB={ el:d, setList:(a)=>{ list0=a; }, show:(i)=>show(i),
-      open:(i)=>{ show(i); d.classList.add("on"); }, close:()=>{ d.classList.remove("on"); d.classList.remove("zoomed"); } };
+      open:(i)=>{ show(i); d.classList.add("on"); }, close:doClose };
     d.querySelector("#frlbClose").onclick=(e)=>{ e.stopPropagation(); FRLB.close(); };
     d.querySelector("#frlbPrev").onclick=(e)=>{ e.stopPropagation(); show(idx-1); };
     d.querySelector("#frlbNext").onclick=(e)=>{ e.stopPropagation(); show(idx+1); };
@@ -1737,10 +1963,10 @@ function openLightbox(srcs, start){
 }
 function renderPhotos(s){
   const list=photosOf(s.id);
-  const urls=[], bigUrls=[];
+  const urls=[], blobs=[];
   const html = list.map((p,i)=>{
     const u=URL.createObjectURL(p.thumbBlob||p.blob); urls.push(u);
-    const b=URL.createObjectURL(p.blob); bigUrls.push(b);
+    blobs.push(p.blob);          /* 放大时现用现建 URL，别提前 revoke（见 openLightbox） */
     return `<div class="ph"><img src="${u}" alt="">
       <button class="imgbtn" data-i="${i}" aria-label="放大查看"></button>
       <div class="t">${labelOf(PHOTO_TYPES,p.type)}</div>
@@ -1752,7 +1978,7 @@ function renderPhotos(s){
     /* 触屏上 click 有时会迟到甚至不合成，pointerup 兜底；guard 防止同一次点击开两次 */
     let guard=false;
     const go=()=>{ if(guard) return; guard=true; setTimeout(()=>{guard=false;},500);
-      openLightbox(bigUrls, Number(b.dataset.i||0)); };
+      openLightbox(blobs, Number(b.dataset.i||0)); };
     b.addEventListener("click", go);
     b.addEventListener("pointerup", (e)=>{ e.preventDefault(); go(); });
     b.addEventListener("touchend", (e)=>{ e.preventDefault(); go(); });
@@ -1776,7 +2002,7 @@ function renderPhotos(s){
     for(const f of files){ try{ await addPhoto(s.id, f, "product"); }catch(e){ toast("照片保存失败："+e.message,4000); } }
     await refresh(); renderPhotos(SUPPLIERS.find(x=>x.id===s.id)||s); renderEdit(s.id);
   }, true);
-  setTimeout(()=>{ urls.forEach(u=>URL.revokeObjectURL(u)); bigUrls.forEach(u=>URL.revokeObjectURL(u)); }, 60000);
+  setTimeout(()=>{ urls.forEach(u=>URL.revokeObjectURL(u)); }, 60000);
 }
 $("#btnDone").onclick=async()=>{
   const s=SUPPLIERS.find(x=>x.id===CUR);
@@ -1953,13 +2179,15 @@ async function buildBundle(mode){
         tombstones:tombs.length + planTombs.length},
       weights:SETTINGS.weights },
     fair: { id:f.id, name:f.name, nameEn:f.nameEn, phase:f.phase, city:f.city, venue:f.venue,
-            area:f.area, startDate:f.startDate, endDate:f.endDate, slug:fairSlug(f) },
+            area:f.area, startDate:f.startDate, endDate:f.endDate, slug:fairSlug(f),
+            summary:f.summary || "" },
     event:{ name:f.nameEn || f.name, phase:f.phase||"",
       dates:[f.startDate, f.endDate].filter(Boolean).join("..") || "",
       venue:[f.city, f.venue].filter(Boolean).join(" · ") },
     suppliers: sup.concat(tombs),
     visitPlans: PLANS.slice().concat(planTombs),
     photos: photos.map(p=>({ id:p.id, supplierId:p.supplierId, type:p.type,
+      highlightId:p.highlightId || null,
       path:"photos/"+p.supplierId+"/"+p.id+".jpg", sha256:p.sha256, size:p.size, createdAt:p.createdAt }))
   };
   return {bundle, photos};
@@ -2094,9 +2322,7 @@ async function renderReport(){
   $("#rpSummary").innerHTML =
     `<div class="kv"><span class="k">记录</span><span class="v">${ctx.suppliers.length} 家（已评分 ${rated} / 草稿 ${drafts}）</span></div>`
     + `<div class="kv"><span class="k">照片</span><span class="v">${photoN} 张${RP.photo?"（报告内嵌，文件会变大）":"（不含）"}</span></div>`
-    + `<div class="kv"><span class="k">重点推荐</span><span class="v">${ctx.picks.length} 家</span></div>`
-    + `<div class="kv"><span class="k">预拜访未到访</span><span class="v">${ctx.plans.filter(p=>p.status!=="visited").length} 家</span></div>`
-    + (ctx.picks.length?`<div style="margin-top:8px">${ctx.picks.map((s,i)=>`${i+1}. ${esc(s._company)} · ${s._score}`).join("<br>")}</div>`:"");
+    + `<div class="kv"><span class="k">预拜访未到访</span><span class="v">${ctx.plans.filter(p=>p.status!=="visited").length} 家</span></div>`;
 }
 async function rpContext(){
   return await window.FRReport.buildContext({
@@ -2107,21 +2333,9 @@ async function rpContext(){
 function rpResult(html){
   const el=$("#rpResult"); el.classList.remove("hide"); el.innerHTML=html;
 }
-$("#btnRpPreview").onclick=async()=>{
-  try{
-    toast("正在生成…", 8000);
-    const ctx=await rpContext();
-    const w=window.FRReport.openPreview(window.FRReport.renderHTML(ctx));
-    if(typeof w==="string"){
-      /* 弹窗被拦截时退回内嵌预览 */
-      rpResult(`<iframe src="${esc(w)}" style="width:100%;height:70vh;border:0;border-radius:12px;background:#fff"></iframe>`);
-      toast("已内嵌预览（浏览器拦截了新窗口）", 4000);
-    }else{ toast("已打开预览", 3000); }
-  }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
-};
 $("#btnRpHtml").onclick=async()=>{
   try{
-    toast("正在生成 HTML…", 10000);
+    toast("正在生成 HTML…", 12000);
     const ctx=await rpContext();
     const html=window.FRReport.renderHTML(ctx);
     const name=window.FRReport.fileName(ctx,"html");
@@ -2129,9 +2343,23 @@ $("#btnRpHtml").onclick=async()=>{
     const shared=await window.FRReport.share(blob, name, "text/html");
     rpResult(`<b>已生成 ${esc(name)}</b>
       <div class="kv"><span class="k">大小</span><span class="v">${(blob.size/1048576).toFixed(2)} MB</span></div>
-      <div class="kv"><span class="k">记录 / 推荐</span><span class="v">${ctx.suppliers.length} 家 / ${ctx.picks.length} 家</span></div>
-      <div class="tiny muted" style="margin-top:8px">${shared?"":"已触发下载。"}想要 PDF：分享到「文件」后用 Safari 打开并打印，或先点「预览英文报告」用里面的 Print 按钮。</div>`);
+      <div class="kv"><span class="k">记录</span><span class="v">${ctx.suppliers.length} 家</span></div>
+      <div class="tiny muted" style="margin-top:8px">${shared?"":"已触发下载。"}想要 PDF：用浏览器打开这个文件，点右上角 <b>Print / Save as PDF</b> 即可存成 PDF。</div>`);
   }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
+};
+$("#btnRpDocx").onclick=async()=>{
+  try{
+    toast("正在生成 DOCX…", 20000);
+    const ctx=await rpContext();
+    const blob=await window.FRReport.toDOCX(ctx);
+    const name=window.FRReport.fileName(ctx,"docx");
+    const shared=await window.FRReport.share(blob, name,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    rpResult(`<b>已生成 ${esc(name)}</b>
+      <div class="kv"><span class="k">大小</span><span class="v">${(blob.size/1048576).toFixed(2)} MB</span></div>
+      <div class="kv"><span class="k">记录 / 照片</span><span class="v">${ctx.suppliers.length} 家</span></div>
+      <div class="tiny muted" style="margin-top:8px">${shared?"":"已触发下载。"}Word / WPS / Pages 可直接打开继续编辑，照片已内嵌。</div>`);
+  }catch(err){ console.error(err); toast("DOCX 生成失败："+err.message, 8000); }
 };
 $("#btnRpXlsx").onclick=async()=>{
   try{
@@ -2173,17 +2401,21 @@ async function renderSettings(){
       toast(SETTINGS.saveToGallery ? "拍照后会自动存入系统相册" : "已关闭自动存相册，仍可点 ⬇ 手动保存", 3000);
     };
   });
+  const sumTxt=(FAIR && (FAIR.summary||"").trim()) ? String(FAIR.summary).trim() : "";
+  $("#setSummaryTxt").innerHTML = sumTxt
+    ? `<div style="font-size:14px;line-height:1.7;white-space:pre-wrap">${esc(sumTxt)}</div>`
+    : (FAIR ? "尚未填写。" : "请先选择展会。");
   const w=SETTINGS.weights;
   $("#setWeights").innerHTML=SCORE_DIMS.map(d=>`<div class="score-row">
-      <span class="lbl">${d[1]}</span>
+      <span class="lbl">${d[1]}<div class="tiny muted">${d[2]}</div></span>
       <input type="number" inputmode="numeric" data-w="${d[0]}" value="${w[d[0]]}" style="width:96px;min-height:46px">
       <span class="w">%</span>
     </div>`).join("") + `<div class="tiny muted" id="wSum"></div>`;
   const W_PRESETS={
-    default:{fit:25, compliance:25, quality:15, price:15, capacity:10, communication:10},
-    compliance:{fit:20, compliance:35, quality:15, price:10, capacity:10, communication:10},
-    price:{fit:20, compliance:20, quality:10, price:25, capacity:15, communication:10},
-    capacity:{fit:20, compliance:20, quality:10, price:15, capacity:25, communication:10},
+    default:{design:30, quality:50, details:20},
+    design:{design:50, quality:30, details:20},
+    quality:{design:20, quality:60, details:20},
+    details:{design:20, quality:40, details:40},
   };
   const upd=()=>{
     let sum=0; $$("#setWeights input").forEach(i=>sum+=Number(i.value)||0);

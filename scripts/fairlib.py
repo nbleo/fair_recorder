@@ -48,18 +48,15 @@ CSTAT = {
     "copy_received": ("已取得副本", "Copy received"),
     "not_available": ("无/不适用", "Not available"),
 }
+# v1.7 起评分三项：Design / Quality / Details，每项 1–5 星，权重合计 100。
 SCORE_DIMS = [
-    ("fit", "产品与技术匹配度", "Product & Technical Fit"),
-    ("compliance", "合规完备度", "Compliance Readiness"),
-    ("quality", "质量与工艺成熟度", "Quality & Process Maturity"),
-    ("price", "价格竞争力", "Price Competitiveness"),
-    ("capacity", "产能与交期", "Capacity & Delivery"),
-    ("communication", "沟通配合度", "Communication & Cooperation"),
+    ("design", "设计与外观", "Design"),
+    ("quality", "质量与工艺", "Quality"),
+    ("details", "细节做工", "Details"),
 ]
-DEFAULT_WEIGHTS = {
-    "fit": 25, "compliance": 25, "quality": 15,
-    "price": 15, "capacity": 10, "communication": 10,
-}
+DEFAULT_WEIGHTS = {"design": 30, "quality": 50, "details": 20}
+# 老版本记录用的是六维评分，读到这里折算成三维口径，否则已评分厂家会变成未评分。
+LEGACY_SCORE_MAP = {"design": "fit", "details": "compliance"}
 FOLLOWUPS = {
     "new": ("新建立", "New"), "docs": ("索要资料", "Request Docs"),
     "quote": ("待报价", "Quote"), "sample": ("待样品", "Sample"),
@@ -68,8 +65,13 @@ FOLLOWUPS = {
 PHOTO_TYPES = {
     "booth": ("展位", "Booth"), "namecard": ("名片", "Name card"),
     "product": ("产品", "Product"), "certificate": ("证书", "Certificate"),
-    "other": ("其他", "Other"),
+    "highlight": ("亮点产品", "Highlight"), "other": ("其他", "Other"),
 }
+# 名片上的字段：v1.7 起和联系人字段分开记，抬头常常和实际对接人不是一个人
+NAMECARD_FIELDS = [
+    ("name", "Name"), ("title", "Title"), ("phone", "Tel"), ("mobile", "Mobile"),
+    ("email", "Email"), ("website", "Web"), ("address", "Address"), ("note", "Other"),
+]
 MARKETS = {
     "Germany 德国": "Germany", "EU (other) 欧盟其他": "EU (other)", "UK 英国": "UK",
     "North America 北美": "North America", "Middle East 中东": "Middle East",
@@ -105,13 +107,25 @@ def missing_fields(s: dict) -> list[str]:
         m.append("公司名 / company name")
     if _blank(s.get("contactName")):
         m.append("联系人 / contact")
-    if _blank(s.get("phone")) and _blank(s.get("wechat")) and _blank(s.get("email")):
-        m.append("联系方式 / contact channel")
+    # v1.7：联系方式不再是必填。现场很多摊位只留个姓名，硬填会造出假号码。
     if not s.get("categories"):
         m.append("品类 / category")
     if not s.get("photoIds"):
         m.append("照片 / photo")
     return m
+
+
+def migrate_score(s: dict) -> dict:
+    """六维老数据 → 三维新口径。补进去但不删原字段，老记录照样能溯源。"""
+    sc = s.setdefault("score", {})
+    if not isinstance(sc, dict):
+        s["score"] = sc = {}
+        return sc
+    for new, old in LEGACY_SCORE_MAP.items():
+        v = sc.get(new)
+        if v is None and isinstance(sc.get(old), (int, float)):
+            sc[new] = sc[old]
+    return sc
 
 
 def score_filled(s: dict) -> bool:
@@ -249,6 +263,7 @@ class PhotoRef:
     size: int
     created_at: str
     export: Export
+    highlight_id: str = ""
 
 
 def _safe_name(name: str) -> bool:
@@ -419,6 +434,7 @@ def collect_photos(exports: list[Export], keep_ids: set[str]) -> dict[str, Photo
                 photo_id=pid, supplier_id=sid, type=meta.get("type") or "other",
                 zip_path=zp, sha256=str(meta.get("sha256") or ""), size=int(meta.get("size") or 0),
                 created_at=_iso(meta.get("createdAt")), export=ex,
+                highlight_id=str(meta.get("highlightId") or ""),
             )
     return out
 
@@ -510,7 +526,8 @@ def materialise_photos(
             issues.append(f"photo {pid}: size mismatch (declared {ref.size}, actual {len(data)})")
         dst = photo_dir / f"{pid}.jpg"
         dst.write_bytes(data)
-        entry = {"file": str(dst), "id": pid, "type": ref.type, "supplierId": ref.supplier_id}
+        entry = {"file": str(dst), "id": pid, "type": ref.type, "supplierId": ref.supplier_id,
+                 "highlightId": ref.highlight_id}
         try:
             with Image.open(dst) as im:
                 im = ImageOps.exif_transpose(im)
@@ -541,6 +558,7 @@ class Context:
     exports: list[dict]
     top_n: int
     event: dict
+    summary: str
     generated_at: str
 
 
@@ -598,6 +616,7 @@ def build_fair_context(exports: list[Export], out_root: Path, top_n: int,
         lst.sort(key=lambda e: (order.get(e.get("type"), 9), e.get("id", "")))
 
     for s in suppliers:
+        migrate_score(s)          # 老六维记录折算到 Design / Quality / Details
         s["_state"] = state_of(s)
         s["_missing"] = missing_fields(s)
         s["_score"] = weighted_score(s, weights)
@@ -640,7 +659,7 @@ def build_fair_context(exports: list[Export], out_root: Path, top_n: int,
         photos_by_supplier=photos_by_supplier, weights=weights, issues=issues,
         exports=[{"file": ex.path.name, "counts": (ex.bundle.get("export") or {}).get("counts", {}),
                   "createdAt": (ex.bundle.get("export") or {}).get("createdAt")} for ex in exports],
-        top_n=top_n, event=event,
+        top_n=top_n, event=event, summary=str((fair_meta or {}).get("summary") or ""),
         generated_at=datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
     )
     ctx.duplicate_candidates = candidates  # type: ignore[attr-defined]
@@ -719,7 +738,25 @@ def grouped_by_category(ctx: Context) -> list[tuple[str, str, list[dict]]]:
     return out
 
 
-def top_picks(ctx: Context) -> list[dict]:
+def photo_buckets(ctx: "Context", sid: str) -> tuple[list[dict], dict[str, list[dict]], list[dict]]:
+    """一个厂家的照片分三处：名片、各条亮点产品、其余进画廊。
+
+    混在一起时报告读起来只是照片堆叠，看不出哪张对应哪个亮点。
+    """
+    cards: list[dict] = []
+    gallery: list[dict] = []
+    by_hl: dict[str, list[dict]] = {}
+    for p in ctx.photos_by_supplier.get(sid) or []:
+        if p.get("type") == "namecard":
+            cards.append(p)
+        elif p.get("highlightId"):
+            by_hl.setdefault(str(p["highlightId"]), []).append(p)
+        else:
+            gallery.append(p)
+    return cards, by_hl, gallery
+
+
+def top_picks(ctx: "Context") -> list[dict]:
     rated = [s for s in ctx.suppliers if s["_rankable"] and s["_score"] is not None]
     rated.sort(key=lambda s: (-s["_score"], -(s.get("score", {}).get("compliance") or 0), s["_company"]))
     return rated[: ctx.top_n]
@@ -744,6 +781,38 @@ def recommendation_text(s: dict) -> str:
     else:
         bits.append("No compliance item was marked unavailable; certificates still to be collected and verified.")
     return " ".join(bits)
+
+
+def highlights(s: dict) -> list[dict]:
+    """亮点产品：每条一个标题 + 一段说明 + 若干照片（照片靠 highlightId 反查）。"""
+    out = []
+    for it in (s.get("highlights") or []):
+        if not isinstance(it, dict):
+            continue
+        title = str(it.get("title") or "").strip()
+        note = str(it.get("note") or "").strip()
+        if not title and not note:
+            continue
+        out.append({"id": str(it.get("id") or ""), "title": title, "note": note})
+    return out
+
+
+def namecard_rows(s: dict) -> list[tuple[str, str]]:
+    """名片信息：只返回真正填了的字段。"""
+    nc = s.get("namecard") or {}
+    return [(en, str(nc.get(code) or "").strip())
+            for code, en in NAMECARD_FIELDS if str(nc.get(code) or "").strip()]
+
+
+def score_comments(s: dict) -> dict[str, str]:
+    """每项评分后面的 Comments。"""
+    sn = s.get("scoreNotes") or {}
+    return {d[0]: str(sn.get(d[0]) or "").strip() for d in SCORE_DIMS}
+
+
+def summary_paras(text: Any) -> list[str]:
+    """观展总结按空行切段——报告最后一项就是原样输出这些段落。"""
+    return [p.strip() for p in re.split(r"\n\s*\n", str(text or "").replace("\r", "")) if p.strip()]
 
 
 def e(text: Any) -> str:

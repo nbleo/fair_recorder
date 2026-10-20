@@ -77,7 +77,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log("stage: fairs screen");
   await page.waitForSelector("#fName", { visible: true, timeout: 8000 });
   for (const [sel, v] of [["#fName", "报告联调展"], ["#fNameEn", "RPT Test Fair"],
-                          ["#fVenue", "Test Hall"], ["#fCity", "Guangzhou"]]) {
+                          ["#fVenue", "Test Hall"], ["#fCity", "Guangzhou"],
+                          ["#fSummary", "第一段：淋浴房整体做的是窄边框，型材壁厚普遍到 1.2–1.5mm。\n\n第二段：待跟进 —— 超窄边框供应商需补 KTW 证书范围。"]]) {
     const el = await page.$(sel);
     if (!el) continue;
     await el.click({ clickCount: 3 });
@@ -102,8 +103,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* ---------- 2) 录入两家（含评分与合规） ---------- */
   await page.evaluate(async () => {
-    const mk = async (zh, en, booth, sc, comp) => {
-      const s = FR.util ? null : null;
+    const mk = async (zh, en, booth, sc, comp, extra) => {
+      const extra0 = extra || {};
+      const sn = extra0.scoreNotes || {}, nc = extra0.namecard || {}, hl = extra0.highlights || [];
       const base = {
         id: FR.uid(), fairId: FR.fair.id, source: "walk_in",
         companyNameZh: zh, companyNameEn: en, boothNo: booth, hall: "A区", area: "卫浴设备",
@@ -113,7 +115,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         priceUnit: "set", incoterm: "FOB", leadTimeDays: 35,
         capacityValue: 5000, capacityUnit: "sets/month",
         exportMarkets: ["Germany 德国"], euGermanyExperience: "Yes",
-        compliance: {}, score: sc, photoIds: [],
+        compliance: {}, score: sc, scoreNotes: sn, photoIds: [],
+        namecard: nc, highlights: hl,
         followUpStatus: "docs", nextAction: "Send intro email", nextActionDate: "2026-11-05",
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), deletedAt: null,
       };
@@ -123,34 +126,57 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       return base.id;
     };
     window.__ids = [];
+    /* v1.7：评分改三项 + 每项 Comments；另加名片信息与一条亮点产品 */
     window.__ids.push(await mk("甲厂", "Alpha Sanitary", "A-01",
-      { fit: 5, compliance: 5, quality: 4, price: 4, capacity: 4, communication: 5 },
-      { CE: "copy_received", EN14428: "document_seen" }));
+      { design: 5, quality: 4, details: 5 },
+      { CE: "copy_received", EN14428: "document_seen" },
+      {
+        scoreNotes: {
+          design: "型材壁厚 1.4mm，边框收口干净",
+          quality: "封边与装配一致性好，样品没有明显色差",
+          details: "铰链自带缓冲，磁条贴合好",
+        },
+        namecard: { name: "Mr. Test", title: "Sales", mobile: "+86 138 0000",
+          email: "t@example.com", address: "Guangzhou" },
+        highlights: [{ id: FR.uid(), title: "超窄边框系列 Slimline 1.0",
+          note: "边框做到 10mm，需确认 6mm 钢化是否配套", createdAt: new Date().toISOString() }],
+      }));
     window.__ids.push(await mk("乙厂", "Beta Glass", "A-02",
-      { fit: 3, compliance: 2, quality: 3, price: 3, capacity: 2, communication: 3 },
-      { EN12150: "not_available" }));
+      { design: 3, quality: 3, details: 2 },
+      { EN12150: "not_available" },
+      { scoreNotes: { design: "造型偏老" }, namecard: {}, highlights: [] }));
     await FR.refresh();
   });
   const nSup = await page.evaluate(() => FR.suppliers.length);
   check(nSup === 2, "录入 2 家供应商：" + nSup);
 
-  /* 给第一家加一张照片（用 canvas 造一个真 JPEG） */
+  /* 给第一家加三张照片：一张产品、一张名片、一张亮点产品配图（用 canvas 造真 JPEG） */
   await page.evaluate(async () => {
-    const c = document.createElement("canvas"); c.width = 600; c.height = 400;
-    const g = c.getContext("2d"); g.fillStyle = "#22d3a6"; g.fillRect(0, 0, 600, 400);
-    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.8));
-    const big = await FR.compress(blob, 1600, 0.8);
-    const thumb = await FR.compress(blob, 320, 0.7);
-    const p = { id: FR.uid(), fairId: FR.fair.id, supplierId: window.__ids[0], type: "product",
-      blob: big, thumbBlob: thumb, w: 600, h: 400, size: big.size,
-      sha256: await FR.sha256Hex(big), createdAt: new Date().toISOString() };
-    await FR.put("photos", p);
-    const s = await FR.get("suppliers", window.__ids[0]);
-    s.photoIds = [p.id]; await FR.put("suppliers", s);
+    const mkJpg = async () => {
+      const c = document.createElement("canvas"); c.width = 600; c.height = 400;
+      const g = c.getContext("2d"); g.fillStyle = "#22d3a6"; g.fillRect(0, 0, 600, 400);
+      const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.8));
+      return { big: await FR.compress(blob, 1600, 0.8), thumb: await FR.compress(blob, 320, 0.7) };
+    };
+    const sup = await FR.get("suppliers", window.__ids[0]);
+    const add = async (type, highlightId) => {
+      const { big, thumb } = await mkJpg();
+      const p = { id: FR.uid(), fairId: FR.fair.id, supplierId: sup.id, type,
+        highlightId: highlightId || null,
+        blob: big, thumbBlob: thumb, w: 600, h: 400, size: big.size,
+        sha256: await FR.sha256Hex(big), createdAt: new Date().toISOString() };
+      await FR.put("photos", p);
+      sup.photoIds.push(p.id);
+    };
+    sup.photoIds = [];
+    await add("product");
+    await add("namecard");
+    await add("highlight", (sup.highlights[0] || {}).id);
+    await FR.put("suppliers", sup);
     await FR.refresh();
   });
   const nPhoto = await page.evaluate(() => FR.photos.length);
-  check(nPhoto === 1, "已存 1 张照片：" + nPhoto);
+  check(nPhoto === 3, "已存 3 张照片：" + nPhoto);
 
   /* ---------- 3) 进报告页 ---------- */
   await page.evaluate(() => go("report"));
@@ -158,7 +184,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(700);
   const summary = await page.$eval("#rpSummary", (el) => el.textContent.replace(/\s+/g, " ").trim());
   check(/2 家/.test(summary), "概览显示记录数：" + summary.slice(0, 60));
-  check(/1 张/.test(summary), "概览显示照片数");
+  check(/3 张/.test(summary), "概览显示照片数（产品参数 / 名片 / 亮点各 1 张）");
 
   /* 设置抬头 */
   await page.evaluate(() => {
@@ -181,9 +207,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   check(/Supplier Report — RPT Test Fair/.test(html), "HTML 封面标题正确");
   check(/Prepared for: Schulte/.test(html), "HTML 封面含抬头 Prepared for");
-  check(/Executive Summary/.test(html), "HTML 含 Executive Summary");
-  check(/Scope &amp; Methodology/.test(html), "HTML 含方法论章节");
-  check(/Supplier Catalogue/.test(html), "HTML 含供应商目录");
+  /* v1.7：只剩三章 —— Supplier List / Supplier Catalogue / Fair Summary */
+  check(/1\. Supplier List/.test(html), "HTML 含第 1 章 Supplier List");
+  check(/Suppliers recorded/.test(html), "Supplier List 保留总数统计");
+  check(!/Executive Summary/.test(html), "HTML 已删除 Executive Summary");
+  check(!/Scope &amp; Methodology/.test(html), "HTML 已删除 Scope & Methodology");
+  check(/2\. Supplier Catalogue/.test(html), "HTML 含供应商目录");
+  check(/3\. Fair Summary/.test(html), "HTML 含观展总结章节");
   /* v1.6：报告只保留 1 / 2 / 3 三章 */
   check(!/Comparison Matrix/.test(html), "HTML 已删除第 4 章 对比矩阵");
   check(!/Key Recommendations/.test(html), "HTML 已删除第 5 章 重点推荐");
@@ -191,16 +221,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(!/Appendix/.test(html), "HTML 已删除第 7 章 附录");
   check(!/Still draft|Planned but not visited|Photos captured|Planned \/ walk-in/.test(html),
     "Executive Summary 已删除 draft / planned / photos 统计");
-  check(/Scoring weights/.test(html) && !/Compliance evidence states|Price comparability/.test(html),
-    "Scope & Methodology 只留 Scoring weights");
+  check(!/Scoring weights/.test(html), "Scoring weights 章节已删除");
   check(!/MOQ \/ Price \/ Lead time/.test(html), "目录已删除 MOQ / Price / Lead time");
   check(!/<span class='k'>Compliance<\/span>/.test(html), "目录已删除 Compliance 行");
   check(/Alpha Sanitary \(甲厂\)/.test(html), "公司名中英并列");
   check(/Shortlist/.test(html), "高分组进入 Shortlist");
-  check(/not available/i.test(html), "合规缺失仍在摘要里提示");
-  /* Top recommendations 现在是全部厂家，不只 Top N */
-  const rowCount = (html.match(/<tr><td>\d+<\/td><td>/g) || []).length;
-  check(rowCount >= 2, "Top recommendations 列出所有厂家（实际 " + rowCount + " 行）");
+  /* 每项评分带 Comments */
+  const dimCount = (html.match(/<tr><td>(Design|Quality|Details)<\/td>/g) || []).length;
+  check(dimCount === 6, "两家供应商的三项评分 + 评语都输出了（实际 " + dimCount + " 行）");
+  check(/<th>Comments<\/th>/.test(html), "评分表含 Comments 列");
+  check(/型材壁厚 1.4mm/.test(html), "Design 的 Comments 原样进报告");
+  check(/☆/.test(html), "星级以 ★/☆ 呈现");
+  /* 名片 / 亮点产品各自成块 */
+  check(/Name card/.test(html) && /Mr\. Test/.test(html), "名片信息进报告");
+  check(/Highlight products/.test(html) && /超窄边框系列 Slimline 1\.0/.test(html), "亮点产品进报告");
+  const ncGrid = (html.match(/alt='namecard'/g) || []).length;
+  check(ncGrid === 1, "名片照片单独成片（实际 " + ncGrid + " 张）");
+  /* 观展总结作为最后一项 */
+  const tail = html.slice(html.indexOf("3. Fair Summary"));
+  check(/淋浴房整体做的是窄边框/.test(tail), "观展总结第一段排在最后一项");
+  check(/超窄边框供应商需补 KTW/.test(tail), "观展总结第二段按段落输出");
   check(/data:image\/jpeg;base64,/.test(html), "照片以 data URL 内嵌");
   check(/Print \/ Save as PDF/.test(html), "报告内含打印按钮");
   check(!/undefined/.test(html.replace(/undefined-/g, "")), "HTML 没有 undefined 泄漏");
@@ -238,6 +278,49 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(/Alpha Sanitary/.test(xlsx.sheet1) && /Beta Glass/.test(xlsx.sheet1), "sheet1 含两家供应商");
   check(/Supplier Master/.test(xlsx.workbook) && /Category Comparison/.test(xlsx.workbook), "工作表名正确");
   check(/spreadsheetml.sheet.main/.test(xlsx.types), "Content_Types 正确");
+  check(/Design Comments|Design comments/.test(xlsx.sheet1), "Excel 含评分评语列");
+  check(/Highlight products/.test(xlsx.sheet1) && /Card name/.test(xlsx.sheet1), "Excel 含名片与亮点产品列");
+
+  /* ---------- 5b) DOCX ---------- */
+  const docx = await page.evaluate(async () => {
+    const blob = await FRReport.toDOCX(window.__ctx);
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let s = ""; for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+    const z = await JSZip.loadAsync(buf);
+    const names = Object.keys(z.files);
+    return {
+      b64: btoa(s), size: buf.length,
+      head: String.fromCharCode(buf[0]) + String.fromCharCode(buf[1]),
+      names,
+      doc: await z.file("word/document.xml").async("string"),
+      rels: await z.file("word/_rels/document.xml.rels").async("string"),
+      types: await z.file("[Content_Types].xml").async("string"),
+      styles: await z.file("word/styles.xml").async("string"),
+      core: await z.file("docProps/core.xml").async("string"),
+    };
+  });
+  fs.writeFileSync(path.join(DOWNLOADS, "report.docx"), Buffer.from(docx.b64, "base64"));
+  check(docx.head === "PK", "DOCX 是合法 zip（PK 头）");
+  check(docx.names.includes("word/document.xml"), "DOCX 含 word/document.xml");
+  check(docx.names.includes("word/styles.xml"), "DOCX 含 styles.xml");
+  check(/wordprocessingml.document.main/.test(docx.types), "DOCX Content_Types 正确");
+  check(/<dc:title>RPT Test Fair<\/dc:title>/.test(docx.core), "DOCX 核心属性写了展会名");
+  const media = docx.names.filter((n) => /^word\/media\/img\d+\.jpg$/.test(n));
+  check(media.length === 3, "三张照片都嵌进了 DOCX（实际 " + media.length + " 个 media：" + media.join(",") + "）");
+  const imgRels = (docx.rels.match(/Type="[^"]*\/image"/g) || []).length;
+  check(imgRels === 3, "图片关系数量正确（实际 " + imgRels + "）");
+  check(/<pic:pic>/.test(docx.doc), "DOCX 用 DrawingML 内嵌图片");
+  check(/1\. Supplier List/.test(docx.doc), "DOCX 含 1. Supplier List");
+  check(/2\. Supplier Catalogue/.test(docx.doc), "DOCX 含 2. Supplier Catalogue");
+  check(/3\. Fair Summary/.test(docx.doc), "DOCX 含 3. Fair Summary");
+  check(!/Executive Summary/.test(docx.doc), "DOCX 已删除 Executive Summary");
+  check(!/Scope &amp; Methodology/.test(docx.doc), "DOCX 已删除 Scope & Methodology");
+  check(/Suppliers recorded/.test(docx.doc), "DOCX 保留总数统计");
+  check(/型材壁厚 1.4mm/.test(docx.doc), "DOCX 含评分评语");
+  check(/超窄边框系列 Slimline 1\.0/.test(docx.doc), "DOCX 含亮点产品");
+  check(/淋浴房整体做的是窄边框/.test(docx.doc), "DOCX 含观展总结");
+  check(/<w:pStyle w:val="Heading1"\/>/.test(docx.doc), "DOCX 用了标题样式");
+  check(!/undefined/.test(docx.doc), "DOCX 没有 undefined 泄漏");
 
   /* ---------- 6) CSV ---------- */
   const csv = await page.evaluate(() => FRReport.toCSV(window.__ctx, "master"));
