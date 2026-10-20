@@ -255,6 +255,9 @@ h3{font-size:17px;margin:22px 0 8px}
 .sub{color:var(--mut);font-size:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
 table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
+/* 第 1 章的清单表有 6 列，手机窄屏挤成一团，包一层横向滚动 */
+.scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.list{min-width:660px}
 th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
 th{background:var(--acc);color:#fff;font-weight:600}
 tbody tr:nth-child(even) td{background:var(--soft2)}
@@ -426,6 +429,32 @@ def supplier_card_html(ctx: F.Context, s: dict) -> str:
     return "".join(h)
 
 
+# ---- 第 1 章 Supplier List ------------------------------------------------ #
+# 以前这一章只有一行「Suppliers recorded: N」，不翻到第 2 章根本不知道见了谁。
+# 现在每家列一行：公司名、展位、品类、联系人、评级（顺序与 Catalogue 一致，高分在前）。
+LIST_COLS = ["#", "Company", "Booth / Hall", "Categories", "Contact", "Rating"]
+LIST_WIDTHS_CM = [0.9, 4.3, 2.1, 2.8, 3.6, 3.3]        # 合计 17.0 cm = A4 版心
+
+
+def list_rows(ctx: F.Context) -> list[list[str]]:
+    """每行一条记录；单元格内的换行由 HTML 转 <br>、由 python-docx 转软换行。"""
+    rows = []
+    for i, s in enumerate(ctx.suppliers, 1):
+        who = " / ".join(x for x in (s.get("contactName"), s.get("contactTitle")) if x)
+        ways = " · ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x)
+        contact = "\n".join(x for x in (who, ways) if x) or "—"
+        # 90.0 这种尾巴看着像精度缺失，能取整就取整
+        sc = s["_score"] if s["_rankable"] and s["_score"] is not None else None
+        sc_txt = "—" if sc is None else f"{sc:.0f}" if float(sc).is_integer() else f"{sc:.1f}"
+        rating = "\n".join(x for x in (sc_txt, s["_tier"] or "") if x) or "—"
+        rows.append([
+            str(i), s["_company"],
+            " / ".join(x for x in (s.get("hall"), s.get("area"), s.get("boothNo")) if x) or "—",
+            ", ".join(F.categories_en(s)) or "—", contact, rating,
+        ])
+    return rows
+
+
 def write_html(ctx: F.Context, path: Path) -> None:
     ev = ctx.event
     total = len(ctx.suppliers)
@@ -438,9 +467,18 @@ def write_html(ctx: F.Context, path: Path) -> None:
     h.append(f"<div class='sub' style='margin-top:8px'>Prepared for: {F.e(ev['prepared_for'])} · "
              f"Generated {F.e(ctx.generated_at)}</div>")
 
-    # 1. Supplier List —— 只留总数统计（Executive Summary 其余内容已删除）
+    # 1. Supplier List —— 总数 + 每家一行关键信息
     h.append("<h2>1. Supplier List</h2><div class='card'>")
     h.append(f"<div class='kv'><span class='k'>Suppliers recorded</span><span>{total}</span></div>")
+    if total:
+        h.append("<div class='scrollx'><table class='list'><tr>"
+                 + "".join(f"<th>{F.e(c)}</th>" for c in LIST_COLS) + "</tr>")
+        for row in list_rows(ctx):
+            cells = "".join(f"<td>{F.e(v).replace(chr(10), '<br>')}</td>" for v in row)
+            h.append(f"<tr>{cells}</tr>")
+        h.append("</table></div>")
+    else:
+        h.append("<p class='small mut'>No supplier recorded yet.</p>")
     h.append("</div>")
 
     # 2. Supplier Catalogue
@@ -615,7 +653,11 @@ def write_docx(ctx: F.Context, path: Path) -> None:
     # ---- 1. Supplier List ----
     # 不插分页：这一章通常只有一行统计，硬分一页等于白留大半页空白。
     h1("1. Supplier List")
-    table(["Metric", "Value"], [["Suppliers recorded", len(ctx.suppliers)]], widths=[6.0, 6.0])
+    para(f"Suppliers recorded: {len(ctx.suppliers)}", size=11, bold=True)
+    if ctx.suppliers:
+        table(LIST_COLS, [list(r) for r in list_rows(ctx)], widths=LIST_WIDTHS_CM)
+    else:
+        para("No supplier recorded yet.", size=10, italic=True)
 
     # ---- 2. Supplier Catalogue ----
     h1("2. Supplier Catalogue")

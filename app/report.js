@@ -213,6 +213,9 @@ h3{font-size:17px;margin:22px 0 8px}
 .sub{color:var(--mut);font-size:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
 table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
+/* 第 1 章的清单表有 6 列，手机窄屏会挤成一团，包一层横向滚动 */
+.scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.list{min-width:660px}
 th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
 th{background:var(--acc);color:#fff;font-weight:600}
 tbody tr:nth-child(even) td{background:var(--soft2)}
@@ -365,6 +368,25 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
       .split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean);
   }
 
+  /* ---------------------- 第 1 章：供应商清单 ----------------------
+     以前这一章只有一行「Suppliers recorded: N」，等于把整份报告变成盲盒——
+     不翻到第 2 章根本不知道这趟展会见了谁。现在按同样的排序（评分高的在前）
+     把每家列一行，一眼能扫到公司名、展位、品类、联系人和评级。
+     单元格里的 \n 由两侧渲染各自处理：HTML 转 <br>，DOCX 转多段 w:p。 */
+  const LIST_COLS = ["#", "Company", "Booth / Hall", "Categories", "Contact", "Rating"];
+  const LIST_WIDTHS = [500, 2400, 1200, 1600, 2000, 1939];   // 合计 9639 = A4 版心
+  function listRows(ctx) {
+    return (ctx.suppliers || []).map((s, i) => {
+      const who = [s.contactName, s.contactTitle].filter(Boolean).join(" / ");
+      const ways = [s.phone, s.wechat, s.email].filter(Boolean).join(" · ");
+      const contact = [who, ways].filter(Boolean).join("\n") || "—";
+      const rating = [(s._rankable && s._score != null) ? String(s._score) : "—", s._tier || ""]
+        .filter(Boolean).join("\n");
+      return [String(i + 1), s._company || companyOf(s), boothText(s),
+        catsEn(s).join(", ") || "—", contact, rating || "—"];
+    });
+  }
+
   function supplierCard(ctx, s) {
     const b = photoBuckets(ctx, s);
     const notes = s.scoreNotes || {};
@@ -446,9 +468,18 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
     h.push(`<div class='sub'>${[e(ev.phase), e(ev.dates), e(ev.venue)].filter(Boolean).join(" · ")}</div>`);
     h.push(`<div class='sub' style='margin-top:8px'>${ev.prepared_for ? "Prepared for: " + e(ev.prepared_for) + " · " : ""}Generated ${e(ctx.generated_at)}</div>`);
 
-    /* 1 —— 只留总数统计，Executive Summary 其余内容全部删除 */
+    /* 1 —— 供应商清单：总数之后紧接着每家一行关键信息 */
     h.push("<h2>1. Supplier List</h2><div class='card'>");
     h.push(`<div class='kv'><span class='k'>Suppliers recorded</span><span>${total}</span></div>`);
+    if (total) {
+      h.push("<div class='scrollx'><table class='list'><tr>" + LIST_COLS.map((c) => `<th>${e(c)}</th>`).join("") + "</tr>");
+      for (const row of listRows(ctx)) {
+        h.push("<tr>" + row.map((v) => `<td>${e(v).replace(/\n/g, "<br>")}</td>`).join("") + "</tr>");
+      }
+      h.push("</table></div>");
+    } else {
+      h.push("<p class='small mut'>No supplier recorded yet.</p>");
+    }
     h.push("</div>");
 
     /* 2 */
@@ -807,7 +838,9 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
        全篇不再插硬分页（封面也不单独占一页）：让 Word 按内容自然流排，
        短章节不会白留大半页空白。与 Python 端 write_docx 口径保持一致。 */
     body += wPara("1. Supplier List", { style: "Heading1" });
-    body += wTable(["Metric", "Value"], [["Suppliers recorded", ctx.suppliers.length]], [3600, 3600]);
+    body += wPara(`Suppliers recorded: ${ctx.suppliers.length}`, { bold: true, size: 11, color: BRAND, after: 60 });
+    if (ctx.suppliers.length) body += wTable(LIST_COLS, listRows(ctx), LIST_WIDTHS);
+    else body += wPara("No supplier recorded yet.", { size: 10, italic: true });
 
     /* 2 —— 供应商档案：基础信息 + 评分评语 + 名片 + 亮点产品 + 展位照片
        这里不再插分页：第 1 章往往只有一行统计，硬分一页就白留了大半页空白，

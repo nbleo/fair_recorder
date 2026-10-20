@@ -214,6 +214,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   /* v1.7：只剩三章 —— Supplier List / Supplier Catalogue / Fair Summary */
   check(/1\. Supplier List/.test(html), "HTML 含第 1 章 Supplier List");
   check(/Suppliers recorded/.test(html), "Supplier List 保留总数统计");
+  /* v1.9：第 1 章不再是孤零零一个总数，要列出每家供应商 */
+  check(/<table class='list'>/.test(html), "Supplier List 含供应商明细表");
+  check(/Booth \/ Hall/.test(html) && /Categories/.test(html), "明细表含 Booth / Hall 与 Categories 列");
+  const listRowsHtml = (html.match(/<tr><td>\d+<\/td>/g) || []).length;
+  check(listRowsHtml === 2, "明细表逐家列出两家供应商（实际 " + listRowsHtml + " 行）");
+  check(/Alpha Sanitary \(甲厂\)/.test(html.split("2. Supplier Catalogue")[0]),
+    "公司名出现在第 1 章明细表里");
+  check(/Mr\. Test \/ Sales/.test(html.split("2. Supplier Catalogue")[0]),
+    "明细表含联系人姓名与职位");
   check(!/Executive Summary/.test(html), "HTML 已删除 Executive Summary");
   check(!/Scope &amp; Methodology/.test(html), "HTML 已删除 Scope & Methodology");
   check(/2\. Supplier Catalogue/.test(html), "HTML 含供应商目录");
@@ -327,6 +336,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(!/Executive Summary/.test(docx.doc), "DOCX 已删除 Executive Summary");
   check(!/Scope &amp; Methodology/.test(docx.doc), "DOCX 已删除 Scope & Methodology");
   check(/Suppliers recorded/.test(docx.doc), "DOCX 保留总数统计");
+  /* v1.9：DOCX 第 1 章同样是明细表，且与 HTML 同口径 */
+  check(/Booth \/ Hall/.test(docx.doc), "DOCX 明细表含 Booth / Hall 列");
+  const firstTbl = docx.doc.split("<w:tbl>")[1] || "";
+  check((firstTbl.match(/<w:gridCol/g) || []).length === 6,
+    "DOCX 第 1 章表格为 6 列（实际 " + (firstTbl.match(/<w:gridCol/g) || []).length + " 列）");
+  check(/Alpha Sanitary/.test(firstTbl), "DOCX 明细表逐家列出供应商");
   check(/型材壁厚 1.4mm/.test(docx.doc), "DOCX 含评分评语");
   check(/超窄边框系列 Slimline 1\.0/.test(docx.doc), "DOCX 含亮点产品");
   check(/Booth Photos/.test(docx.doc), "DOCX 含独立 Booth Photos 板块");
