@@ -1,6 +1,6 @@
 /* FairRecorder service worker — offline-first app shell.
    Cache version: bump manually before a fair and freeze it (do NOT auto-update on site). */
-const CACHE = "fair-recorder-v15";
+const CACHE = "fair-recorder-v16";
 const SHELL = [
   "./",
   "./index.html",

@@ -654,7 +654,7 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 "use strict";
 /* ============================ 常量 ============================ */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 
 /* 展会预设：只预填城市/场馆/展区，不限制品类，任何展会都能自建 */
 const FAIR_PRESETS = [
@@ -733,8 +733,8 @@ const FIELDS = [
   ]},
   {sec:"产品", items:[
     {k:"categories",label:"品类（可多选）",type:"chips",opts:CATEGORIES,req:true},
-    {k:"productDetails",label:"产品描述 / 亮点",type:"textarea"},
-    {k:"models",label:"型号",type:"text"}
+    /* v1.8：原「型号」输入项移除，产品线只留简介（旧记录里的 models 仍保留、导出照常读出） */
+    {k:"productDetails",label:"简介 / 公司简介",type:"textarea"}
   ]},
   /* 「商务条件」板块已于 v1.3 从录入页移除：现场谈不清 MOQ / 价格 / 交期，
      硬填只会得到一堆假数据。旧记录里的这些字段仍然保留，报告照常读出。
@@ -1645,19 +1645,17 @@ function renderEdit(id){
 }
 
 /* ---------------------- 名片 ---------------------- */
-const NAMECARD_FIELDS=[
-  ["name","姓名 / Name"],["title","职位 / Title"],["phone","电话 / Tel"],
-  ["mobile","手机 / Mobile"],["email","邮箱 / Email"],["website","网址 / Web"],
-  ["address","地址 / Address"],["note","其它 / Other"]
-];
+/* v1.8 起名片只保留照片：现场对着名片抄一遍字段太慢，也容易抄错，
+   真要留底直接拍清楚正面即可（报告里单列一个 Name card 版面）。
+   注意 NAMECARD_FIELDS 仍然保留 —— 老数据里的 namecard 字段要照常导出，只是不再提供输入。 */
 function namecardBlock(s){
-  const nc=s.namecard||{};
   const cards=photosOf(s.id).filter(p=>p.type==="namecard");
   let h=`<div class="sec">名片</div><div class="card">`;
   h+=`<div class="btn-row" style="margin-bottom:10px">
     <button class="btn btn-accent" id="ncCam" style="flex:1">📇 拍摄名片</button>
     <button class="btn btn-sm" id="ncPick" style="flex:1">🖼 从相册选</button>
-  </div>`;
+  </div>
+  <div class="tiny muted" style="margin-bottom:10px">拍清楚正面就行，可存多张。名片上的抬头常常跟实际对接人不是一个人，报告里单独列一栏。</div>`;
   if(cards.length){
     const urls=[], blobs=[];
     h+=`<div class="photos">`+cards.map((p,i)=>{
@@ -1669,9 +1667,6 @@ function namecardBlock(s){
     setTimeout(()=>urls.forEach(u=>URL.revokeObjectURL(u)), 60000);
     setTimeout(()=>{ ncBindPhotos(cards, blobs); }, 0);
   }
-  h+=NAMECARD_FIELDS.map(([k,l])=>
-    `<div class="field"><label>${l}</label><input type="text" data-nc="${k}" value="${esc(nc[k]||"")}" placeholder="照名片抄，可留空"></div>`).join("");
-  h+=`<div class="tiny muted" style="margin-top:6px">名片上的抬头常常跟实际对接人不是一个人，所以这里单独记一份，不覆盖上面的联系人。</div>`;
   h+=`</div>`;
   return h;
 }
@@ -1692,11 +1687,6 @@ function ncBindPhotos(cards, blobs){
   });
 }
 function bindNamecard(s){
-  $$("#editForm [data-nc]").forEach(el=>{
-    const k=el.dataset.nc;
-    const h=async()=>{ s.namecard=s.namecard||{}; s.namecard[k]=el.value; await save(s); };
-    el.oninput=h; el.onchange=h;
-  });
   const cam=$("#ncCam"), pick=$("#ncPick");
   if(cam) cam.onclick=()=>pickPhoto(async(files)=>{
     for(const f of files){ try{ await addPhoto(s.id, f, "namecard", {gallery:true}); }

@@ -169,6 +169,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       sup.photoIds.push(p.id);
     };
     sup.photoIds = [];
+    /* 3 张普通照片会让 Booth Photos 走三列并排，正好用来验版面；
+       名片 / 亮点各 1 张，各自回到单列布局。 */
+    await add("product");
+    await add("product");
     await add("product");
     await add("namecard");
     await add("highlight", (sup.highlights[0] || {}).id);
@@ -176,7 +180,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await FR.refresh();
   });
   const nPhoto = await page.evaluate(() => FR.photos.length);
-  check(nPhoto === 3, "已存 3 张照片：" + nPhoto);
+  check(nPhoto === 5, "已存 5 张照片（产品参数 ×3 / 名片 / 亮点）：" + nPhoto);
 
   /* ---------- 3) 进报告页 ---------- */
   await page.evaluate(() => go("report"));
@@ -184,7 +188,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(700);
   const summary = await page.$eval("#rpSummary", (el) => el.textContent.replace(/\s+/g, " ").trim());
   check(/2 家/.test(summary), "概览显示记录数：" + summary.slice(0, 60));
-  check(/3 张/.test(summary), "概览显示照片数（产品参数 / 名片 / 亮点各 1 张）");
+  check(/5 张/.test(summary), "概览显示照片数（产品参数 ×3 / 名片 / 亮点各 1 张）");
 
   /* 设置抬头 */
   await page.evaluate(() => {
@@ -237,6 +241,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(/Highlight products/.test(html) && /超窄边框系列 Slimline 1\.0/.test(html), "亮点产品进报告");
   const ncGrid = (html.match(/alt='namecard'/g) || []).length;
   check(ncGrid === 1, "名片照片单独成片（实际 " + ncGrid + " 张）");
+  /* Booth Photos：亮点产品之外的其余照片单独成一栏，排在 Highlight products 之后 */
+  check(/Booth Photos/.test(html), "HTML 含独立 Booth Photos 板块");
+  const iHl = html.indexOf("Highlight products");
+  const iBooth = html.indexOf("Booth Photos");
+  check(iHl >= 0 && iBooth > iHl, "Booth Photos 排在 Highlight products 之后");
+  const boothImgs = (html.slice(iBooth).match(/alt='product'/g) || []).length;
+  check(boothImgs === 3, "三张普通照片都落到 Booth Photos（实际 " + boothImgs + " 张）");
   /* 观展总结作为最后一项 */
   const tail = html.slice(html.indexOf("3. Fair Summary"));
   check(/淋浴房整体做的是窄边框/.test(tail), "观展总结第一段排在最后一项");
@@ -306,9 +317,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(/wordprocessingml.document.main/.test(docx.types), "DOCX Content_Types 正确");
   check(/<dc:title>RPT Test Fair<\/dc:title>/.test(docx.core), "DOCX 核心属性写了展会名");
   const media = docx.names.filter((n) => /^word\/media\/img\d+\.jpg$/.test(n));
-  check(media.length === 3, "三张照片都嵌进了 DOCX（实际 " + media.length + " 个 media：" + media.join(",") + "）");
+  check(media.length === 5, "五张照片都嵌进了 DOCX（实际 " + media.length + " 个 media：" + media.join(",") + "）");
   const imgRels = (docx.rels.match(/Type="[^"]*\/image"/g) || []).length;
-  check(imgRels === 3, "图片关系数量正确（实际 " + imgRels + "）");
+  check(imgRels === 5, "图片关系数量正确（实际 " + imgRels + "）");
   check(/<pic:pic>/.test(docx.doc), "DOCX 用 DrawingML 内嵌图片");
   check(/1\. Supplier List/.test(docx.doc), "DOCX 含 1. Supplier List");
   check(/2\. Supplier Catalogue/.test(docx.doc), "DOCX 含 2. Supplier Catalogue");
@@ -318,6 +329,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(/Suppliers recorded/.test(docx.doc), "DOCX 保留总数统计");
   check(/型材壁厚 1.4mm/.test(docx.doc), "DOCX 含评分评语");
   check(/超窄边框系列 Slimline 1\.0/.test(docx.doc), "DOCX 含亮点产品");
+  check(/Booth Photos/.test(docx.doc), "DOCX 含独立 Booth Photos 板块");
+  check(docx.doc.indexOf("Booth Photos") > docx.doc.indexOf("Highlight products"),
+    "DOCX 里 Booth Photos 排在 Highlight products 之后");
+  /* 排版：不再逐节硬分页；照片改用隐形表格横向并排 */
+  const brk = (docx.doc.match(/<w:br w:type="page"\/>/g) || []).length;
+  check(brk <= 1, "DOCX 不再逐节强制分页（硬分页 " + brk + " 处，只剩封面后一处）");
+  const tblBlocks = docx.doc.split("<w:tbl>").slice(1)
+    .filter((b) => b.indexOf("<w:drawing>") >= 0 && b.indexOf("</w:tbl>") >= 0);
+  check(tblBlocks.length >= 3, "照片用隐形表格承载（名片 / 亮点 / Booth 各一组，实际 " + tblBlocks.length + " 组）");
+  const threeCol = tblBlocks.filter((b) => (b.match(/<w:gridCol /g) || []).length === 3);
+  check(threeCol.length >= 1, "三张 Booth Photos 排成三列（实际 " + threeCol.length + " 组三列表格）");
+  check(/<w:tblLayout w:type="fixed"\/>/.test(docx.doc), "表格用固定布局，列宽不会被内容撑歪");
   check(/淋浴房整体做的是窄边框/.test(docx.doc), "DOCX 含观展总结");
   check(/<w:pStyle w:val="Heading1"\/>/.test(docx.doc), "DOCX 用了标题样式");
   check(!/undefined/.test(docx.doc), "DOCX 没有 undefined 泄漏");

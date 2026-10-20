@@ -420,7 +420,14 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
       }
       h.push("</div>");
     }
-    h.push(gridHTML(b.gal));
+    /* 其余照片（展位 / 产品 / 证书 / 其它）单独成一栏，排在亮点产品之后。
+       之前是直接挂在卡片末尾，读的人分不清这些图属于哪个板块，
+       而且很容易被当成「亮点产品的续图」。 */
+    if (b.gal.length) {
+      h.push("<div class='blk'><div class='blkt'>Booth Photos</div>");
+      h.push(gridHTML(b.gal));
+      h.push("</div>");
+    }
     h.push("</div>");
     return h.join("");
   }
@@ -665,9 +672,9 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
     }
     return x + `</w:tbl>` + wPara("", { size: 4, after: 0 });
   }
-  function wPicture(rid, pid, name, cx, cy) {
+  function picDrawing(rid, pid, name, cx, cy) {
     const nm = xmlEsc(name || "photo");
-    return `<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">`
+    return `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">`
       + `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>`
       + `<wp:docPr id="${pid}" name="${nm}"/>`
       + `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>`
@@ -677,7 +684,11 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
       + `<pic:blipFill><a:blip r:embed="${rid}"/><a:srcRect/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
       + `<pic:spPr bwMode="auto"><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`
       + `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></pic:spPr>`
-      + `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+      + `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+  }
+  function wPicture(rid, pid, name, cx, cy) {
+    return `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r>`
+      + picDrawing(rid, pid, name, cx, cy) + `</w:r></w:p>`;
   }
   /* dataURL → 字节：报告里照片本来就以 base64 存着，不必再单独记一份二进制 */
   function dataUrlBytes(url) {
@@ -688,11 +699,57 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes;
   }
-  function fitImage(p) {
-    const maxW = 9.0 * EMU, maxH = 13.0 * EMU;      // A4 去掉页边距后的可用区域
-    let cx = maxW, cy = Math.round(cx * (p.h || 3) / (p.w || 4));
-    if (cy > maxH) { cy = maxH; cx = Math.round(cy * (p.w || 4) / (p.h || 3)); }
+  /* ---------- 图片排布 ----------
+     页面可用宽约 17cm（A4 减左右 2cm 页边距）= 9639 twips。以前一张图占一段、
+     单图最大 9cm，两页就翻完了，同批图还忽大忽小（受 maxH 挤压的方向不一致）。
+     现在统一放进隐形表格：列数按张数定，每格同宽、同左右留白、顶端对齐，
+     尺寸由所在列宽统一推算，横向排得下的就横向排。 */
+  const AVAIL_W = 9639;
+  const CELL_PAD = 90;      // 每格左右留白
+  const MAX_SINGLE_H = 5103; // 9cm：单张大图的最高限，免得一张竖图吃掉半页
+  function fitImage(p, cellW) {
+    let cx = Math.max(600, (cellW || AVAIL_W) - CELL_PAD * 2);
+    let cy = Math.round(cx * (p.h || 3) / (p.w || 4));
+    const cap = arguments.length > 2 ? arguments[2] : MAX_SINGLE_H;
+    if (cy > cap) { cy = cap; cx = Math.round(cy * (p.w || 4) / (p.h || 3)); }
     return [cx, cy];
+  }
+
+  /* toDOCX 内部调用：把一组图排成 cols 列的隐形表格 */
+  function picGrid(list, cols, embed, pidRef) {
+    if (!list || !list.length) return "";
+    /* 单张时不撑满版心（12cm 更耐看），多张时才用满左边到右边的 17cm */
+    const totalW = cols === 1 ? Math.min(AVAIL_W, 6804) : AVAIL_W;
+    const colW = Math.floor(totalW / cols);
+    let x = `<w:tbl><w:tblPr><w:tblW w:w="${totalW}" w:type="dxa"/>`
+      + `<w:tblLayout w:type="fixed"/>`
+      + `<w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"]
+        .map((t) => `<w:${t} w:val="none" w:sz="0" w:space="0" w:color="auto"/>`).join("")}</w:tblBorders>`
+      + `<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="${CELL_PAD}" w:type="dxa"/>`
+      + `<w:bottom w:w="0" w:type="dxa"/><w:right w:w="${CELL_PAD}" w:type="dxa"/></w:tblCellMar>`
+      + `</w:tblPr><w:tblGrid>${Array.from({ length: cols }, () => `<w:gridCol w:w="${colW}"/>`).join("")}</w:tblGrid>`;
+    for (let r = 0; r < list.length; r += cols) {
+      x += "<w:tr>";
+      for (let c = 0; c < cols; c++) {
+        const p = list[r + c];
+        x += `<w:tc><w:tcPr><w:tcW w:w="${colW}" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>`;
+        if (p) {
+          const i = embed(p);
+          if (i) {
+            const [cx, cy] = fitImage(p, colW);
+            pidRef.n++;
+            x += `<w:p><w:pPr><w:spacing w:before="40" w:after="40" w:line="240" w:lineRule="auto"/>`
+              + `<w:jc w:val="center"/></w:pPr><w:r>`
+              + picDrawing("rIdImg" + i, pidRef.n, p.type || "photo", cx, cy) + `</w:r></w:p>`;
+          } else { x += wPara("", { size: 2, after: 0 }); }
+        } else {
+          x += wPara("", { size: 2, after: 0 });   // 末尾不满一行时占个空位，保证列宽不塌
+        }
+        x += "</w:tc>";
+      }
+      x += "</w:tr>";
+    }
+    return x + "</w:tbl>" + wPara("", { size: 4, after: 0 });
   }
 
   const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -728,16 +785,12 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
       rels.push({ id: "rIdImg" + i, type: E_NS, target: `media/img${i}.jpg` });
       return i;
     };
-    /* 一张图 = 一个关系 + 一个 media 部件 + 一段 <w:drawing> */
+    /* 一组照片排成隐形表格：1 张单列、2 张两列、3 张及以上三列 */
+    const pidRef = { n: pid };
     const pic = (list) => {
-      let out = "";
-      for (const p of (list || [])) {
-        const i = embed(p);
-        if (!i) continue;
-        const [cx, cy] = fitImage(p);
-        out += wPicture("rIdImg" + i, ++pid, p.type || "photo", cx, cy);
-      }
-      return out;
+      const n = (list || []).length;
+      if (!n) return "";
+      return picGrid(list, n === 1 ? 1 : n === 2 ? 2 : 3, embed, pidRef);
     };
 
     const ev = ctx.event;
@@ -753,8 +806,9 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
     body += wPara("1. Supplier List", { style: "Heading1" });
     body += wTable(["Metric", "Value"], [["Suppliers recorded", ctx.suppliers.length]], [3600, 3600]);
 
-    /* 2 —— 供应商档案：基础信息 + 评分评语 + 名片 + 亮点产品 + 照片 */
-    body += wPageBreak();
+    /* 2 —— 供应商档案：基础信息 + 评分评语 + 名片 + 亮点产品 + 展位照片
+       这里不再插分页：第 1 章往往只有一行统计，硬分一页就白留了大半页空白，
+       让 Word 自己顺着排，章节之间靠 Heading 的段前间距分隔。 */
     body += wPara("2. Supplier Catalogue", { style: "Heading1" });
     const groups = grouped(ctx);
     if (!groups.length) body += wPara("No supplier recorded yet.", { size: 10, italic: true });
@@ -809,15 +863,15 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
           }
         }
 
+        /* 亮点产品之外的其余照片单独成一栏，不与上面的板块混排 */
         if (b.gal.length) {
-          body += wPara("Photos", { bold: true, size: 11, color: BRAND, before: 140, after: 60 });
+          body += wPara("Booth Photos", { bold: true, size: 11, color: BRAND, before: 140, after: 60 });
           body += pic(b.gal);
         }
       }
     }
 
-    /* 3 —— 最后一项：观展总结 */
-    body += wPageBreak();
+    /* 3 —— 最后一项：观展总结（同样不强制分页，接在上一章后面） */
     body += wPara("3. Fair Summary", { style: "Heading1" });
     const paras = summaryParas(ctx);
     if (paras.length) {

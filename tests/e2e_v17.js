@@ -174,6 +174,13 @@ async function freshDb(page) {
   check(/联系人/.test(missNoName.join("")) && !/联系方式/.test(missNoName.join("")),
     "缺姓名仍要提示，且不再要求联系方式：" + missNoName.join("、"));
 
+  /* ---------------- 3.5) 简介改名 / 型号移除 ---------------- */
+  const labelTxt = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#editForm label")).map((x) => x.textContent.trim()));
+  check(labelTxt.some((l) => l.indexOf("简介") >= 0),
+    "「产品描述 / 亮点」已改名为「简介 / 公司简介」");
+  check(!labelTxt.some((l) => l.indexOf("型号") >= 0), "「型号」输入项已从录入页移除");
+
   /* ---------------- 4) 拍摄名片 ---------------- */
   console.log("\n[4] 拍摄名片");
   const nc = await page.evaluate(async (mk) => {
@@ -213,22 +220,32 @@ async function freshDb(page) {
   await sleep(600);
   const nc2 = await page.evaluate(async () => {
     const ph = (await FR.all("photos")).filter((p) => p.supplierId === CUR && p.type === "namecard");
-    /* 顺手填一下名片信息：和联系人字段分开存 */
-    const inputs = document.querySelectorAll("#editForm [data-nc]");
-    const set = (k, v) => {
-      const el = Array.from(inputs).find((x) => x.dataset.nc === k);
-      if (el) { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }
+    return {
+      n: ph.length,
+      inputs: document.querySelectorAll("#editForm [data-nc]").length,
+      hasCam: !!document.getElementById("ncCam"),
+      hasPick: !!document.getElementById("ncPick"),
     };
-    set("name", "Klaus Meier");
-    set("title", "Export Manager");
-    set("mobile", "+49 171 1234567");
-    await new Promise((r) => setTimeout(r, 400));
-    const s = await FR.get("suppliers", CUR);
-    return { n: ph.length, card: s.namecard };
   });
   check(nc2.n === 2, "支持多张名片照片（实际 " + nc2.n + " 张）");
-  check(nc2.card && nc2.card.name === "Klaus Meier" && nc2.card.mobile === "+49 171 1234567",
-    "名片信息单独记录（并不覆盖联系人）");
+  check(nc2.hasCam && nc2.hasPick, "名片板块仍保留拍摄 / 相册入口");
+  /* v1.8：手抄名片信息的输入框全部删掉，只留照片 */
+  check(nc2.inputs === 0, "名片下的姓名 / 职位等手填项已移除（实际还剩 " + nc2.inputs + " 个）");
+
+  /* 旧记录里的 namecard 字段仍要能读出并进导出（不能因为删了输入就把老数据丢了） */
+  const ncCompat = await page.evaluate(async () => {
+    const s = await FR.get("suppliers", CUR);
+    s.namecard = Object.assign({}, s.namecard || {}, { name: "Klaus Meier", title: "Export Manager" });
+    await FR.put("suppliers", s);
+    await FR.refresh();
+    const ctx = await FRReport.buildContext();
+    const xl = await FRReport.toXLSX(ctx);
+    /* Master 表里应该有 Card name 这一列，值就是老数据里的 Klaus Meier */
+    const z = await JSZip.loadAsync(xl);
+    const sheet = await z.file("xl/worksheets/sheet1.xml").async("string");
+    return { hasKlaus: sheet.indexOf("Klaus Meier") >= 0 };
+  });
+  check(ncCompat.hasKlaus, "历史名片数据仍随导出一起出去（Card name 列有值）");
 
   /* ---------------- 5) 亮点产品 ---------------- */
   console.log("\n[5] 亮点产品");

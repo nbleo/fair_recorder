@@ -415,10 +415,13 @@ def supplier_card_html(ctx: F.Context, s: dict) -> str:
             h.append("</div>")
         h.append("</div>")
 
-    # 其余照片
+    # 其余照片：单独成 Booth Photos 一栏，排在亮点产品之后。
+    # 之前直接挂在卡片末尾，读的人分不清这些图属于哪个板块。
     if gallery:
+        h.append("<div class='blk'><div class='blkt'>Booth Photos</div>")
         h.append("<div class='grid'>" + "".join(
             f"<img src='{_b64_image(p['file'])}' alt='{F.e(p.get('type'))}'>" for p in gallery) + "</div>")
+        h.append("</div>")
     h.append("</div>")
     return "".join(h)
 
@@ -466,6 +469,41 @@ def write_html(ctx: F.Context, path: Path) -> None:
     path.write_text("".join(h), encoding="utf-8")
 
 
+def _image_ratio(path) -> float | None:
+    """读图片宽高比 w/h，读不出来返回 None。
+
+    不引 PIL / 任何第三方：报告里的照片就是 JPEG 和 PNG 两种，
+    各自从文件头里取尺寸就够，省得导出链在别人机器上多了个依赖。
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4096)
+        if head[:8] == b"\x89PNG\r\n\x1a\n":
+            w = int.from_bytes(head[16:20], "big")
+            h = int.from_bytes(head[20:24], "big")
+            return (w / h) if h else None
+        if head[:2] == b"\xff\xd8":                       # JPEG：找 SOF 段
+            i = 2
+            while i + 9 < len(head):
+                if head[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = head[i + 1]
+                if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                              0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    h = int.from_bytes(head[i + 5:i + 7], "big")
+                    w = int.from_bytes(head[i + 7:i + 9], "big")
+                    return (w / h) if h else None
+                if marker == 0xD8 or 0xD0 <= marker <= 0xD9:
+                    i += 2
+                    continue
+                seg = int.from_bytes(head[i + 2:i + 4], "big")
+                i += 2 + seg
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
 def write_docx(ctx: F.Context, path: Path) -> None:
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -511,6 +549,59 @@ def write_docx(ctx: F.Context, path: Path) -> None:
                     r.cells[i].width = Cm(w)
         return t
 
+    def pictures(photos):
+        """一组照片横向排成隐形表格：1 张单列、2 张两列、3 张及以上三列。
+
+        以前是一张图一个段落（固定 7cm），要么占掉大半页、要么留一堆空白，
+        同一批图的实际宽度还会因为高度挤压而不一致。现在统一按列宽算尺寸，
+        每格同样左右留白、顶端对齐、居中，看起来才像排版过的资料。
+        """
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+
+        items = [p for p in (photos or []) if p.get("report")]
+        if not items:
+            return
+        cols = 1 if len(items) == 1 else 2 if len(items) == 2 else 3
+        total = 12.0 if cols == 1 else 17.0          # A4 减左右边距约 17cm
+        colw, pad = total / cols, 0.16
+        imgw = colw - pad * 2
+        rows_n = -(-len(items) // cols)
+
+        tbl = doc.add_table(rows=rows_n, cols=cols)
+        tbl.autofit = False
+        borders = OxmlElement("w:tblBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            el = OxmlElement(f"w:{edge}")
+            el.set(qn("w:val"), "none"); el.set(qn("w:sz"), "0")
+            borders.append(el)
+        tbl._tbl.tblPr.append(borders)
+        layout = OxmlElement("w:tblLayout")
+        layout.set(qn("w:type"), "fixed")
+        tbl._tbl.tblPr.append(layout)
+
+        for i, p in enumerate(items):
+            r, c = divmod(i, cols)
+            cell = tbl.rows[r].cells[c]
+            # 竖图按列宽算出来会很高，统一压到 9cm 以内再回推宽度
+            ratio = _image_ratio(p["report"])
+            w_cm = imgw
+            if ratio and imgw / ratio > 9.0:
+                w_cm = 9.0 * ratio
+            try:
+                cell.paragraphs[0].add_run().add_picture(p["report"], width=Cm(w_cm))
+            except Exception:  # noqa: BLE001
+                pass
+
+        for row in tbl.rows:
+            for cell in row.cells:
+                cell.width = Cm(colw)
+                for pp in cell.paragraphs:
+                    pp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    pp.paragraph_format.space_before = Pt(2)
+                    pp.paragraph_format.space_after = Pt(2)
+                    pp.paragraph_format.line_spacing = 1.0
+
     # ---- Cover ----
     t = doc.add_heading("Supplier Report", level=0)
     t.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -522,9 +613,9 @@ def write_docx(ctx: F.Context, path: Path) -> None:
     doc.add_paragraph()
 
     # ---- 1. Supplier List ----
+    # 不插分页：这一章通常只有一行统计，硬分一页等于白留大半页空白。
     h1("1. Supplier List")
     table(["Metric", "Value"], [["Suppliers recorded", len(ctx.suppliers)]], widths=[6.0, 6.0])
-    doc.add_page_break()
 
     # ---- 2. Supplier Catalogue ----
     h1("2. Supplier Catalogue")
@@ -569,11 +660,7 @@ def write_docx(ctx: F.Context, path: Path) -> None:
                 para("Name card", size=11, bold=True)
                 if card_rows_docx:
                     table(["Field", "Value"], [list(r) for r in card_rows_docx], widths=[3.4, 12.6])
-                for p in cards:
-                    try:
-                        doc.add_picture(p["report"], width=Cm(7.0))
-                    except Exception:  # noqa: BLE001
-                        pass
+                pictures(cards)
 
             hl_items = F.highlights(s)
             if hl_items:
@@ -583,23 +670,15 @@ def write_docx(ctx: F.Context, path: Path) -> None:
                     if it["note"]:
                         for ln in str(it["note"]).split("\n"):
                             para(ln, size=10.5)
-                    for p in (by_hl.get(it["id"]) or []):
-                        try:
-                            doc.add_picture(p["report"], width=Cm(7.0))
-                        except Exception:  # noqa: BLE001
-                            pass
+                    pictures(by_hl.get(it["id"]) or [])
 
+            # 亮点产品之外的其余照片，单独成一栏，不与上面混排
             if gallery:
-                para("Photos", size=11, bold=True)
-                for p in gallery:
-                    try:
-                        doc.add_picture(p["report"], width=Cm(7.0))
-                    except Exception:  # noqa: BLE001
-                        pass
+                para("Booth Photos", size=11, bold=True)
+                pictures(gallery)
             doc.add_paragraph()
 
-    # ---- 3. Fair Summary（最后一项） ----
-    doc.add_page_break()
+    # ---- 3. Fair Summary（最后一项，同样接在上一章后面，不强制分页） ----
     h1("3. Fair Summary")
     paras = F.summary_paras(ctx.summary)
     if paras:
