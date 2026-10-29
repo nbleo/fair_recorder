@@ -533,7 +533,8 @@ def materialise_photos(
             with Image.open(dst) as im:
                 im = ImageOps.exif_transpose(im)
                 im = im.convert("RGB")
-                for tag, maxside, qual in (("report", 1000, 82), ("excel", 160, 72)):
+                # report 900/Q78 与手机端一致；excel 只进工作簿缩略图，小一点足够
+                for tag, maxside, qual in (("report", 900, 78), ("excel", 160, 72)):
                     c = im.copy()
                     c.thumbnail((maxside, maxside), Image.LANCZOS)
                     p = thumb_dir / f"{pid}_{tag}.jpg"
@@ -729,13 +730,17 @@ def grouped_by_category(ctx: Context) -> list[tuple[str, str, list[dict]]]:
         cats = s.get("categories") or ["other"]
         for c in cats:
             buckets.setdefault(c, []).append(s)
+    order = {code: i for i, (code, _zh, _en) in enumerate(CATEGORIES)}
     out = []
     for code, items in buckets.items():
         uniq = list({s["id"]: s for s in items}.values())
         uniq.sort(key=lambda s: (0 if s["_rankable"] else 1,
                                  -(s["_score"] if s["_score"] is not None else -1), s["_company"]))
         out.append((code, CAT_EN.get(code, code), uniq))
-    out.sort(key=lambda t: -len(t[2]))
+    # 数量多的组在前；数量相同按 CATEGORIES 表顺序。
+    # 只按数量排会让同数量的组保持录入顺序，手机端（app/report.js 的 grouped()）
+    # 却按品类表排，两个通道的章节顺序就对不上了。
+    out.sort(key=lambda t: (-len(t[2]), order.get(t[0], 99)))
     return out
 
 

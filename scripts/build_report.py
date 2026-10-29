@@ -48,14 +48,16 @@ def _style_header(ws, widths: list[int], freeze: str = "A2"):
         ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
 
 
-def _b64_image(path_str: str, max_side: int = 640) -> str:
+def _b64_image(path_str: str, max_side: int = 900) -> str:
+    """手机端（app/report.js buildContext）用 photoSide=900 / quality 0.78，
+    这里必须同参数，否则同一份数据在电脑和手机上导出的照片清晰度不一样。"""
     try:
         from PIL import Image, ImageOps
         with Image.open(path_str) as im:
             im = ImageOps.exif_transpose(im).convert("RGB")
             im.thumbnail((max_side, max_side))
             buf = io.BytesIO()
-            im.save(buf, "JPEG", quality=80, optimize=True)
+            im.save(buf, "JPEG", quality=78, optimize=True)
         return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
     except Exception:  # noqa: BLE001
         return ""
@@ -297,8 +299,8 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
 .lbhint{position:absolute;bottom:calc(6px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;
  color:rgba(255,255,255,.6);font-size:12px}
 @media (max-width:420px){.grid img{width:160px;height:120px}.lbbtn{width:42px;height:42px;font-size:22px}}
-@media print{body{background:#fff;color:#000}.card{border-color:#bbb}th{background:#E8EAF7;color:#000}
- #lb{display:none}}
+@media print{body{background:#fff;color:#000}.card{border-color:#bbb;background:#fff}
+th{background:#E8EAF7;color:#000}#btnPrint,#lb{display:none}.warn{border-color:#999;color:#000;background:#fff}}
 """
 
 # 照片点开看大图：双击放大、左右滑动切换、点空白处关闭（与 app/report.js 同一份逻辑）
