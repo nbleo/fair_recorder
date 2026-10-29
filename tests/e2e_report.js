@@ -187,8 +187,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.waitForSelector("#rpSummary", { timeout: 8000 });
   await sleep(700);
   const summary = await page.$eval("#rpSummary", (el) => el.textContent.replace(/\s+/g, " ").trim());
-  check(/2 家/.test(summary), "概览显示记录数：" + summary.slice(0, 60));
-  check(/5 张/.test(summary), "概览显示照片数（产品参数 ×3 / 名片 / 亮点各 1 张）");
+  check(/Records\s*2\b/.test(summary), "概览显示记录数：" + summary.slice(0, 60));
+  check(/Photos\s*5\b/.test(summary), "概览显示照片数（产品参数 ×3 / 名片 / 亮点各 1 张）");
 
   /* 设置抬头 */
   await page.evaluate(() => {
@@ -209,23 +209,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   fs.writeFileSync(path.join(DOWNLOADS, "report.html"), html, "utf8");
 
-  check(/Supplier Report — RPT Test Fair/.test(html), "HTML 封面标题正确");
+  check(/Factory Report — RPT Test Fair/.test(html), "HTML 封面标题正确");
   check(/Prepared for: Schulte/.test(html), "HTML 封面含抬头 Prepared for");
   /* v1.7：只剩三章 —— Supplier List / Supplier Catalogue / Fair Summary */
-  check(/1\. Supplier List/.test(html), "HTML 含第 1 章 Supplier List");
-  check(/Suppliers recorded/.test(html), "Supplier List 保留总数统计");
+  check(/1\. Factory List/.test(html), "HTML 含第 1 章 Factory List");
+  check(/Factories recorded/.test(html), "Factory List 保留总数统计");
   /* v1.9：第 1 章不再是孤零零一个总数，要列出每家供应商 */
-  check(/<table class='list'>/.test(html), "Supplier List 含供应商明细表");
+  check(/<table class='list'>/.test(html), "Factory List 含工厂明细表");
   check(/Booth \/ Hall/.test(html) && /Categories/.test(html), "明细表含 Booth / Hall 与 Categories 列");
   const listRowsHtml = (html.match(/<tr><td>\d+<\/td>/g) || []).length;
   check(listRowsHtml === 2, "明细表逐家列出两家供应商（实际 " + listRowsHtml + " 行）");
-  check(/Alpha Sanitary \(甲厂\)/.test(html.split("2. Supplier Catalogue")[0]),
+  check(/Alpha Sanitary \(甲厂\)/.test(html.split("2. Factory Catalogue")[0]),
     "公司名出现在第 1 章明细表里");
-  check(/Mr\. Test \/ Sales/.test(html.split("2. Supplier Catalogue")[0]),
+  check(/Mr\. Test \/ Sales/.test(html.split("2. Factory Catalogue")[0]),
     "明细表含联系人姓名与职位");
   check(!/Executive Summary/.test(html), "HTML 已删除 Executive Summary");
   check(!/Scope &amp; Methodology/.test(html), "HTML 已删除 Scope & Methodology");
-  check(/2\. Supplier Catalogue/.test(html), "HTML 含供应商目录");
+  check(/2\. Factory Catalogue/.test(html), "HTML 含工厂目录");
   check(/3\. Fair Summary/.test(html), "HTML 含观展总结章节");
   /* v1.6：报告只保留 1 / 2 / 3 三章 */
   check(!/Comparison Matrix/.test(html), "HTML 已删除第 4 章 对比矩阵");
@@ -296,7 +296,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     "XLSX 含两个工作表：" + xlsx.names.filter((n) => /sheet\d/.test(n)).join(", "));
   check(xlsx.names.includes("xl/styles.xml"), "XLSX 含 styles.xml");
   check(/Alpha Sanitary/.test(xlsx.sheet1) && /Beta Glass/.test(xlsx.sheet1), "sheet1 含两家供应商");
-  check(/Supplier Master/.test(xlsx.workbook) && /Category Comparison/.test(xlsx.workbook), "工作表名正确");
+  check(/Factories/.test(xlsx.workbook) && /Category Comparison/.test(xlsx.workbook), "工作表名正确");
   check(/spreadsheetml.sheet.main/.test(xlsx.types), "Content_Types 正确");
   check(/Design Comments|Design comments/.test(xlsx.sheet1), "Excel 含评分评语列");
   check(/Highlight products/.test(xlsx.sheet1) && /Card name/.test(xlsx.sheet1), "Excel 含名片与亮点产品列");
@@ -330,12 +330,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const imgRels = (docx.rels.match(/Type="[^"]*\/image"/g) || []).length;
   check(imgRels === 5, "图片关系数量正确（实际 " + imgRels + "）");
   check(/<pic:pic>/.test(docx.doc), "DOCX 用 DrawingML 内嵌图片");
-  check(/1\. Supplier List/.test(docx.doc), "DOCX 含 1. Supplier List");
-  check(/2\. Supplier Catalogue/.test(docx.doc), "DOCX 含 2. Supplier Catalogue");
+  check(/1\. Factory List/.test(docx.doc), "DOCX 含 1. Factory List");
+  check(/2\. Factory Catalogue/.test(docx.doc), "DOCX 含 2. Factory Catalogue");
   check(/3\. Fair Summary/.test(docx.doc), "DOCX 含 3. Fair Summary");
   check(!/Executive Summary/.test(docx.doc), "DOCX 已删除 Executive Summary");
   check(!/Scope &amp; Methodology/.test(docx.doc), "DOCX 已删除 Scope & Methodology");
-  check(/Suppliers recorded/.test(docx.doc), "DOCX 保留总数统计");
+  check(/Factories recorded/.test(docx.doc), "DOCX 保留总数统计");
   /* v1.9：DOCX 第 1 章同样是明细表，且与 HTML 同口径 */
   check(/Booth \/ Hall/.test(docx.doc), "DOCX 明细表含 Booth / Hall 列");
   const firstTbl = docx.doc.split("<w:tbl>")[1] || "";
@@ -380,16 +380,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
 
   await page.evaluate(() => document.getElementById("btnRpHtml").click());
-  await page.waitForFunction(() => /已生成/.test(document.getElementById("rpResult").textContent), { timeout: 15000 })
+  await page.waitForFunction(() => /Created/.test(document.getElementById("rpResult").textContent), { timeout: 15000 })
     .catch(() => {});
   const res1 = await page.$eval("#rpResult", (el) => el.textContent.replace(/\s+/g, " ").trim());
-  check(/已生成 Supplier_Report_.*\.html/.test(res1), "点「导出 HTML」有结果：" + res1.slice(0, 46));
+  check(/Created Factory_Report_.*\.html/.test(res1), "点「导出 HTML」有结果：" + res1.slice(0, 46));
 
   await page.evaluate(() => document.getElementById("btnRpXlsx").click());
   await page.waitForFunction(() => /\.xlsx/.test(document.getElementById("rpResult").textContent), { timeout: 15000 })
     .catch(() => {});
   const res2 = await page.$eval("#rpResult", (el) => el.textContent.replace(/\s+/g, " ").trim());
-  check(/已生成 Supplier_Report_.*\.xlsx/.test(res2), "点「导出 Excel」有结果");
+  check(/Created Factory_Report_.*\.xlsx/.test(res2), "点「导出 Excel」有结果");
 
   await page.evaluate(() => document.getElementById("btnRpCsv").click());
   await page.waitForFunction(() => /\.csv/.test(document.getElementById("rpResult").textContent), { timeout: 15000 })
@@ -398,7 +398,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(/\.csv/.test(res3), "点「导出 CSV」有结果");
 
   const shared = await page.evaluate(() => window.__shared);
-  check(shared.length === 3 && shared.every((n) => /^Supplier_Report_/.test(n)),
+  check(shared.length === 3 && shared.every((n) => /^Factory_Report_/.test(n)),
     "三次导出都走分享：" + shared.join(", "));
 
   /* 无分享能力时（桌面浏览器）必须退回下载，不能卡死 */

@@ -61,9 +61,9 @@ srv.listen(PORT, "127.0.0.1", async () => {
   };
 
   await dump("current fair", { topN: 5, withPhotos: true,
-    preparedFor: "Schulte – Shower enclosure sourcing" }, "Supplier_Report_EN.html");
+    preparedFor: "Schulte – Shower enclosure sourcing" }, "Factory_Report_EN.html");
   await dump("all fairs", { all: true, topN: 5, withPhotos: true,
-    preparedFor: "Schulte – Shower enclosure sourcing" }, "Supplier_Report_All_Fairs.html");
+    preparedFor: "Schulte – Shower enclosure sourcing" }, "Factory_Report_All_Fairs.html");
 
   const x = await p.evaluate(async () => {
     const c = await FRReport.buildContext({ topN: 5, withPhotos: false });
@@ -72,8 +72,8 @@ srv.listen(PORT, "127.0.0.1", async () => {
     let s = ""; for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
     return { b64: btoa(s), csv: FRReport.toCSV(c, "master") };
   });
-  fs.writeFileSync(path.join(OUT, "Supplier_Master.xlsx"), Buffer.from(x.b64, "base64"));
-  fs.writeFileSync(path.join(OUT, "Supplier_Master.csv"), x.csv, "utf8");
+  fs.writeFileSync(path.join(OUT, "Factory_Master.xlsx"), Buffer.from(x.b64, "base64"));
+  fs.writeFileSync(path.join(OUT, "Factory_Master.csv"), x.csv, "utf8");
   console.log("xlsx + csv written");
 
   /* v1.7：手机上也能直接出 DOCX（同一段代码，走界面里的「导出 / 分享 DOCX 报告」） */
@@ -85,7 +85,7 @@ srv.listen(PORT, "127.0.0.1", async () => {
     let s = ""; for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
     return { b64: btoa(s), size: buf.length };
   });
-  fs.writeFileSync(path.join(OUT, "Supplier_Report_EN.docx"), Buffer.from(d.b64, "base64"));
+  fs.writeFileSync(path.join(OUT, "Factory_Report_EN.docx"), Buffer.from(d.b64, "base64"));
   console.log("docx written (" + (d.size / 1048576).toFixed(2) + " MB)");
   await b.close(); srv.close();
 });

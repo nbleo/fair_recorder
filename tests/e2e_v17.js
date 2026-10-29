@@ -79,7 +79,7 @@ async function freshDb(page) {
   check(setRows.n === 3, "设置页只有三行权重（实际 " + setRows.n + " 行）");
   check(/Design/.test(setRows.labels.join(" ")) && /Quality/.test(setRows.labels.join(" "))
     && /Details/.test(setRows.labels.join(" ")), "权重行带英文名：" + setRows.labels.join(" | "));
-  check(/外观优先/.test(setRows.preset) && !/合规优先/.test(setRows.preset),
+  check(/Design first/.test(setRows.preset) && !/Compliance first/.test(setRows.preset),
     "预设换成三项口径：" + setRows.preset);
   check(setRows.hasSummary, "设置页有「观展总结」入口");
 
@@ -171,15 +171,15 @@ async function freshDb(page) {
   check(miss.length === 0, "只有姓名没有手机 / 邮箱也算完整：" + JSON.stringify(miss));
   const missNoName = await page.evaluate(() => FR.util.missing(
     { companyNameZh: "星评厂", categories: ["shower_enclosure"], photoIds: ["x"] }));
-  check(/联系人/.test(missNoName.join("")) && !/联系方式/.test(missNoName.join("")),
+  check(/contact/i.test(missNoName.join("")) && !/phone|e-mail|email|wechat/i.test(missNoName.join("")),
     "缺姓名仍要提示，且不再要求联系方式：" + missNoName.join("、"));
 
   /* ---------------- 3.5) 简介改名 / 型号移除 ---------------- */
   const labelTxt = await page.evaluate(() =>
     Array.from(document.querySelectorAll("#editForm label")).map((x) => x.textContent.trim()));
-  check(labelTxt.some((l) => l.indexOf("简介") >= 0),
-    "「产品描述 / 亮点」已改名为「简介 / 公司简介」");
-  check(!labelTxt.some((l) => l.indexOf("型号") >= 0), "「型号」输入项已从录入页移除");
+  check(labelTxt.some((l) => /profile/i.test(l)),
+    "「产品描述 / 亮点」已改名为「Profile / Company profile」");
+  check(!labelTxt.some((l) => /model/i.test(l)), "「型号」输入项已从录入页移除");
 
   /* ---------------- 4) 拍摄名片 ---------------- */
   console.log("\n[4] 拍摄名片");
@@ -331,8 +331,8 @@ async function freshDb(page) {
     docx: (document.querySelector("#btnRpDocx") || {}).textContent || "",
     old: !!document.querySelector("#btnRpPreview"),
   }));
-  check(/导出 \/ 分享 HTML 报告/.test(btns.html), "第一个按钮是「导出 / 分享 HTML 报告」：" + btns.html.trim());
-  check(/导出 \/ 分享 DOCX 报告/.test(btns.docx), "第二个按钮是「导出 / 分享 DOCX 报告」：" + btns.docx.trim());
+  check(/Export \/ share HTML report/.test(btns.html), "第一个按钮是「Export / share HTML report」：" + btns.html.trim());
+  check(/Export \/ share DOCX report/.test(btns.docx), "第二个按钮是「Export / share DOCX report」：" + btns.docx.trim());
   check(!btns.old, "原来的「预览英文报告」按钮已移除");
 
   const shareOut = await page.evaluate(async () => {
@@ -346,7 +346,7 @@ async function freshDb(page) {
   });
   check(shareOut.names.some((n) => /\.docx$/.test(n)),
     "点按钮真的生成并分享出 DOCX：" + shareOut.names.join(", "));
-  check(/Supplier_Report_/.test(shareOut.txt), "结果区给出文件名");
+  check(/Factory_Report_/.test(shareOut.txt), "结果区给出文件名");
 
   /* DOCX 内容必须包含三章 + 观展总结 */
   const docBody = await page.evaluate(async () => {
@@ -358,8 +358,8 @@ async function freshDb(page) {
     const media = Object.keys(z.files).filter((n) => /^word\/media\/img\d+\.jpg$/.test(n));
     return { doc, media: media.length };
   });
-  check(/1\. Supplier List/.test(docBody.doc), "DOCX 第 1 章 Supplier List");
-  check(/2\. Supplier Catalogue/.test(docBody.doc), "DOCX 第 2 章 Supplier Catalogue");
+  check(/1\. Factory List/.test(docBody.doc), "DOCX 第 1 章 Factory List");
+  check(/2\. Factory Catalogue/.test(docBody.doc), "DOCX 第 2 章 Factory Catalogue");
   check(/3\. Fair Summary/.test(docBody.doc), "DOCX 第 3 章 Fair Summary");
   check(/窄边框成为主流/.test(docBody.doc), "观展总结排在 DOCX 最后一项");
   check(!/Executive Summary/.test(docBody.doc), "DOCX 已无 Executive Summary");

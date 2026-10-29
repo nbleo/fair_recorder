@@ -90,10 +90,12 @@ const check = (cond, m) => (cond ? ok(m) : bad(m));
   const curFair1 = await page.evaluate(() => FR.fair.id);
   check(fairId1 === curFair1, "新记录挂在当前展会下");
 
-  // 4.1）录入页形态：品类含智能马桶，商务条件 / 合规资质已移除
+  // 4.1）录入页形态：品类含 Smart Toilet + 新增的 Floor-Standing Toilet，商务条件 / 合规资质已移除
   const formShape = await page.$eval("#editForm", (el) => el.textContent);
-  check(/智能马桶/.test(formShape), "录入页品类含「智能马桶」");
+  check(/Smart Toilet/.test(formShape), "录入页品类含「Smart Toilet」");
+  check(/Floor-Standing Toilet/.test(formShape), "录入页品类含「Floor-Standing Toilet」（普通马桶）");
   check(!/商务条件|合规资质|MOQ/.test(formShape), "录入页已移除商务条件 / 合规资质");
+  check(!/[\u4e00-\u9fa5]/.test(formShape), "录入页不含中文（v2.0 全英文）");
 
   // 5) 切到第二个展会，记录数应归零（隔离）
   await page.evaluate(async () => {
@@ -164,7 +166,38 @@ const check = (cond, m) => (cond ? ok(m) : bad(m));
       if (el) el.value = "";
     }
   });
-  check(/公开的程序仓库/.test(guard), `公开程序仓被拒绝写入（${guard.slice(0, 40)}）`);
+  check(/public app repository/.test(guard), `公开程序仓被拒绝写入（${guard.slice(0, 60)}）`);
+
+  // 11) 网络故障必须与"配置里有脏字符"分开报
+  //     曾经的坑：token 里混入零宽字符/换行时 fetch 直接抛 TypeError，
+  //     被笼统包装成"网络不可达"，用户在信号和 Wi-Fi 之间白试好几天。
+  check(!!(await page.$("#syDiag")), "同步屏有 Diagnose network 入口");
+
+  const dirty = await page.evaluate(async () => {
+    await FR.setKV("gh", {
+      owner: "nbleo", repo: "fairrecorder-data", branch: "main", root: "users",
+      token: "github_pat_abc\u4e2d\u6587", login: "", namespace: "nbleo",
+      scope: "meta", encrypt: false, repoPrivate: true,
+    });
+    await renderSync();
+    try { await window.FRSync.testConnection(); return "NO ERROR"; }
+    catch (e) { return e.message; }
+  });
+  check(/non-ASCII character/.test(dirty), `脏 token 报字符非法（${dirty.slice(0, 50)}）`);
+  check(!/Network unreachable|Cannot reach api\.github\.com/.test(dirty),
+    "脏 token 不再被误报成网络故障");
+
+  const cleaned = await page.evaluate(async () => {
+    await FR.setKV("gh", {
+      owner: "nbleo", repo: "fairrecorder-data", branch: "main", root: "users",
+      token: "github_pat_abc\n\u200bdef", login: "", namespace: "nbleo",
+      scope: "meta", encrypt: false, repoPrivate: true,
+    });
+    await renderSync();
+    /* 换行和零宽字符必须被静默洗掉，而不是报错 */
+    return document.getElementById("syToken").placeholder;
+  });
+  check(/Saved/.test(cleaned), `含换行/零宽字符的 token 读取时被清洗（占位文案 ${cleaned}）`);
 
   await browser.close();
 

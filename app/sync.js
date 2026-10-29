@@ -31,6 +31,10 @@
   const LAYOUT = "fairrecorder/per-user/v2";
   const LEGACY_LAYOUT = "per-fair/v1";  // 旧版单文件路径，拉取时兼容
 
+  /* 单个请求的上限。不设超时的话，链路被黑洞时手机浏览器会挂好几分钟
+   * （iOS Safari 尤其久），用户只会看到"一直转圈"，分不清是慢还是不通。 */
+  const NET_TIMEOUT_MS = 30000;
+
   /* 公开的程序仓：只放代码与 Pages，永远不写数据 */
   const PUBLIC_CODE_REPOS = [
     { owner: "nbleo", repo: "fair_recorder" },
@@ -58,11 +62,67 @@
     el.innerHTML = `<div style="margin-bottom:4px"><b>${esc(t)}</b> ${esc(msg)}</div>` + el.innerHTML;
   }
 
+  /* ============================ 输入的脏字符 ============================ */
+
+  /* 从 GitHub 网页、微信、备忘录里复制 token 时常会带上零宽字符、全角空格、换行。
+   * 这些字符肉眼看不出，却会让 fetch 在请求发出去之前就抛
+   * "String contains non ISO-8859-1 code point"，上层再包装成"网络不可达"，
+   * 于是用户以为是信号不好，换 Wi-Fi、开关飞行模式，反复重试永远失败。
+   * 落库前统一洗掉：HTTP 头的值本来也不允许出现这些字符。 */
+  function cleanToken(v) {
+    return String(v == null ? "" : v)
+      .replace(/[\u200B-\u200F\u2028\u2029\uFEFF\u00A0]/g, "")  // 零宽 / BOM / 不换行空格
+      .replace(/\s+/g, "");                                     // 换行、制表、普通空格
+  }
+
+  /* 找一个不能进 HTTP 头的字符（非可打印 ASCII），返回它本身，没有则返回空串 */
+  function badChar(v) {
+    const m = String(v == null ? "" : v).match(/[^\x20-\x7E]/);
+    return m ? m[0] : "";
+  }
+  function charName(ch) {
+    return JSON.stringify(ch) + " (U+"
+      + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0") + ")";
+  }
+
+  /* 把底层异常翻译成用户能照着做的判断。笼统的"网络不可达"会让人在信号、
+   * Wi-Fi、飞行模式之间瞎试，而真正的原因可能是 token 里混了一个零宽字符。 */
+  function netError(e, timedOut) {
+    const raw = String((e && e.message) || e || "unknown");
+    if (/non ISO-8859-1|Invalid value|ByteString/i.test(raw)) {
+      return new Error("Blocked before the request left the phone: a saved value contains "
+        + "characters that are not allowed in an HTTP header. Clear the token field and paste it again.");
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      return new Error("This device is offline — the browser reports no network. "
+        + "Turn on Wi-Fi or mobile data and try again.");
+    }
+    if (timedOut) {
+      return new Error("api.github.com gave no answer within " + Math.round(NET_TIMEOUT_MS / 1000)
+        + "s, so this network is most likely blocking or throttling it. "
+        + "Open https://api.github.com/ in the phone browser: if it does not show JSON, "
+        + "switch networks or use a VPN. Your notes are safe on the phone either way.");
+    }
+    return new Error("Cannot reach api.github.com (" + raw + "). "
+      + "Open https://api.github.com/ in the phone browser to see whether this network can reach GitHub at all.");
+  }
+
+  /* toast 只有一行，长句会被挤成一坨看不清。完整原因留在日志区，这里只取第一句。 */
+  function shortErr(msg) {
+    const s = String(msg || "");
+    const m = s.match(/^.*?[.!?](?:\s|$)/);
+    const one = (m ? m[0] : s).trim();
+    return one.length > 90 ? one.slice(0, 88) + "…" : one;
+  }
+
   /* ============================ 配置 ============================ */
 
   async function loadCfg() {
     const saved = await FR.getKV("gh", null);
     S = Object.assign({}, DEFAULTS, saved || {});
+    /* 旧版本保存的 token 可能已经带了不可见字符。读出来顺手洗掉，
+     * 否则用户点了"测试连接"还是失败，会以为这个问题修不好。 */
+    if (S.token) S.token = cleanToken(S.token);
     const auto = await FR.getKV("autoSync", null);
     if (auto) { S.autoMode = auto.mode || "off"; S.autoScope = auto.scope || "meta"; }
   }
@@ -86,12 +146,12 @@
 
   function userRoot() {
     const w = who();
-    if (!w) throw new Error("未确定访问者身份：请先在云同步里「测试连接」，或手填命名空间");
+    if (!w) throw new Error("Visitor identity unknown: tap Test connection in Cloud backup, or fill in the namespace manually");
     return `${(S.root || "users").replace(/^\/+|\/+$/g, "")}/${w}`;
   }
   function fairRoot() {
     const f = FR.fair;
-    if (!f) throw new Error("未选择展会");
+    if (!f) throw new Error("No fair selected");
     return `${userRoot()}/fairs/${f.id}`;
   }
   function metaPath() { return `${fairRoot()}/meta.json`; }
@@ -111,6 +171,21 @@
   let _ctrl = null;   // 当前同步的 AbortController
 
   async function api(method, url, body, signal, opts) {
+    /* 先把配置里的脏字符拦掉。放任它走到 fetch，只会得到一句
+     * "Failed to fetch"，用户没法知道是 token 的问题而不是信号。 */
+    const badTk = badChar(S.token);
+    if (badTk) {
+      throw new Error("The saved token contains an invisible or non-ASCII character "
+        + charName(badTk) + ", which cannot be sent in a request header. "
+        + "Clear the token field and paste the token again (typing it never helps — the character is invisible).");
+    }
+    const badRepo = badChar(S.owner) || badChar(S.repo) || badChar(S.branch);
+    if (badRepo) {
+      throw new Error("Owner / repository / branch contains an invalid character " + charName(badRepo)
+        + ". Use only letters, digits, hyphen, underscore and dot.");
+    }
+    if (!S.token) throw new Error("Token is empty — paste a fine-grained token with Contents: Read and write");
+
     const headers = {
       Authorization: "Bearer " + S.token,
       Accept: "application/vnd.github+json",
@@ -124,21 +199,33 @@
      * GitHub 忽略未知查询参数，但会因此绕过 CDN 副本。 */
     const url2 = method === "GET"
       ? url + (url.includes("?") ? "&" : "?") + "_=" + Date.now() : url;
+    const outer = signal || (_ctrl && _ctrl.signal) || null;
     /* 展馆里网络抖动是常态。GET 是只读的，重试安全；写请求不重试，避免重复提交。 */
     let res;
     for (let attempt = 0; ; attempt++) {
+      const ctl = new AbortController();
+      let timedOut = false;
+      const onAbort = () => ctl.abort();
+      if (outer) {
+        if (outer.aborted) ctl.abort();
+        else outer.addEventListener("abort", onAbort, { once: true });
+      }
+      const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, NET_TIMEOUT_MS);
       try {
         res = await fetch("https://api.github.com" + url2, {
           method, headers, body: body ? JSON.stringify(body) : undefined,
-          signal: signal || (_ctrl && _ctrl.signal) || undefined,
+          signal: ctl.signal,
         });
         break;
       } catch (e) {
-        if (e && e.name === "AbortError") throw e;
-        if (method !== "GET" || attempt >= 2) {
-          throw new Error("网络不可达（" + (e.message || e) + "）");
-        }
+        /* 用户主动取消（新的同步顶掉旧的）原样上抛，不要伪装成网络故障 */
+        if (outer && outer.aborted) throw e;
+        /* 超时不重试：链路被黑洞时重试只会把 30s 拉成 90s，用户更难受 */
+        if (timedOut || method !== "GET" || attempt >= 2) throw netError(e, timedOut);
         await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+      } finally {
+        clearTimeout(timer);
+        if (outer) outer.removeEventListener("abort", onAbort);
       }
     }
     if (!res.ok) {
@@ -208,11 +295,11 @@
         } catch (e) {
           if (!/422/.test(String((e && e.message) || ""))) throw e;
           lastErr = e;
-          log(`提交遇到并发冲突（第 ${attempt + 1} 次），重新读取最新进度后重试…`);
+          log(`Submit hit a conflict (attempt ${attempt + 1}); re-reading progress and retrying...`);
           await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
       }
-      throw lastErr || new Error("提交失败：无法推进分支");
+      throw lastErr || new Error("Submit failed: could not advance the branch");
     },
 
     async getUserInfo() {
@@ -320,7 +407,7 @@
   async function cryptoCtx(remoteMeta) {
     if (!S.encrypt) return null;
     const pass = ($("#syPass") && $("#syPass").value) || "";
-    if (!pass) throw new Error("已开启云端加密，请填写加密口令（忘记则无法恢复云端数据）");
+    if (!pass) throw new Error("Cloud encryption is on: enter the passphrase (if it is lost the cloud copy cannot be recovered)");
     const salt = (remoteMeta && remoteMeta.enc && remoteMeta.enc.salt) || newSaltB64();
     return { key: await deriveKey(pass, salt), salt, enc: Object.assign({}, ENC, { salt }) };
   }
@@ -332,15 +419,15 @@
       c.owner.toLowerCase() === String(S.owner).toLowerCase()
       && c.repo.toLowerCase() === String(S.repo).toLowerCase());
     if (hit) {
-      throw new Error(`「${hit.owner}/${hit.repo}」是公开的程序仓库（Pages 站点），`
-        + "只放代码。供应商数据请填私有数据仓库。");
+      throw new Error(`"${hit.owner}/${hit.repo}" is the public app repository (Pages site) — `
+        + "code only. Point factory data at a private repository.");
     }
     const r = await api("GET", `/repos/${S.owner}/${S.repo}`);
     S.repoPrivate = !!r.private;
     await saveCfg();
     if (!r.private) {
-      throw new Error(`「${r.full_name}」是公开仓库，拒绝上传。请在 Settings 里改成 Private，`
-        + "或新建一个私有仓库——供应商名单与照片绝不能进公开仓。");
+      throw new Error(`"${r.full_name}" is a public repository, upload refused. Make it private in `
+        + "Settings or create a private one — factory lists and photos must never go into a public repo.");
     }
     return r;
   }
@@ -358,20 +445,74 @@
   }
 
   async function testConnection() {
-    if (!configured()) throw new Error("请先填写 owner / repo / token");
+    if (!configured()) throw new Error("Fill in owner / repo / token first");
     const r = await api("GET", `/repos/${S.owner}/${S.repo}`);
     S.repoPrivate = !!r.private;
-    let whoTxt = "身份未知";
+    let whoTxt = "identity unknown";
     try {
       const u = await Syncer.getUserInfo();
       S.login = u.login;
       whoTxt = u.login;
     } catch (e) {
-      whoTxt = "读不到身份（改用下方手填命名空间）";
+      whoTxt = "identity unreadable (use the namespace field below)";
     }
     await saveCfg();
-    const vis = r.private ? "私有 ✅" : "公开 ⚠️（已禁止上传）";
-    return `${r.full_name} · ${vis} · 分支 ${r.default_branch} · 访问者 ${whoTxt}`;
+    const vis = r.private ? "private OK" : "PUBLIC (upload blocked)";
+    return `${r.full_name} · ${vis} · branch ${r.default_branch} · visitor ${whoTxt}`;
+  }
+
+  /* 一键体检：把笼统的"网络不可达"拆成几条能自己判断的结论。
+   * 手机上没法开控制台，所以每条结果都写进备份日志区，用户截图就能说明问题。 */
+  async function diagnose() {
+    const say = (s) => { log("Diagnose · " + s); return s; };
+    const conn = navigator.connection || navigator.mozConnection || {};
+    say("Device: " + (navigator.onLine ? "browser reports ONLINE" : "browser reports OFFLINE")
+      + (conn.effectiveType ? " · link " + conn.effectiveType : "")
+      + (conn.downlink ? " · ~" + conn.downlink + " Mbps" : "")
+      + (conn.rtt ? " · rtt " + conn.rtt + " ms" : ""));
+
+    /* 1) 只验证能不能建立 TCP+TLS 到 api.github.com。no-cors 既不触发预检，
+     *    也不要求响应带 CORS 头，所以"失败"就一定是链路问题，与 CORS 无关。 */
+    let reachable = false;
+    const t1 = Date.now();
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 12000);
+      /* 不读响应内容：全不透明响应读不了，但能拿到就说明连接已经建立 */
+      await fetch("https://api.github.com/zen?_=" + Date.now(), {
+        mode: "no-cors", cache: "no-store", signal: ctl.signal,
+      });
+      clearTimeout(timer);
+      reachable = true;
+      say("api.github.com reachable (" + (Date.now() - t1) + " ms)");
+    } catch (e) {
+      say("api.github.com UNREACHABLE — " + ((e && e.message) || e)
+        + ". This is the network, not the app: try another Wi-Fi / mobile data, or a VPN.");
+    }
+
+    /* 2) 链路通了再看 CORS / HTTP 是否放行。这一步才需要读正文。 */
+    if (reachable) {
+      try {
+        const r = await fetch("https://api.github.com/zen?_=" + Date.now(), { cache: "no-store" });
+        const txt = await r.text();
+        say("HTTP + CORS ok (status " + r.status + ", " + txt.length + " chars back)");
+      } catch (e) {
+        say("Reached GitHub but the response was blocked: " + ((e && e.message) || e));
+      }
+    }
+
+    /* 3) token 本身的字符状态。只报长度和前缀类型，绝不整串打印。 */
+    const bad = badChar(S.token);
+    say("Token: " + (S.token
+      ? S.token.length + " chars, prefix " + S.token.slice(0, 11) + "…"
+        + (bad ? " · ILLEGAL character " + charName(bad) + " → re-paste it" : " · all ASCII, ok")
+      : "EMPTY → paste a token"));
+
+    /* 4) 仓库 / 身份配置，避免把 401/404 当成网络问题。 */
+    say("Target: " + (S.owner || "(no owner)") + "/" + (S.repo || "(no repo)")
+      + " · branch " + (S.branch || "main") + " · identity " + (who() || "(unknown)"));
+
+    return reachable;
   }
 
   /* ============================ 分块 ============================ */
@@ -395,7 +536,7 @@
   /* ============================ 上传 ============================ */
 
   async function push(scope) {
-    if (!configured()) throw new Error("请先填写 owner / repo / token");
+    if (!configured()) throw new Error("Fill in owner / repo / token first");
     await assertSafe();
     await ensureIdentity();
     await FR.refresh();
@@ -481,8 +622,8 @@
     S.lastSyncAt = new Date().toISOString();
     await saveCfg();
     await FR.markPushed(S.lastSyncAt);
-    log(`分块 ${chunks.length} 个，本次上传 ${dirty.size} 个脏块 / ${newPhotos} 张新照片`
-      + (skipped ? `（跳过 ${skipped} 张已上传）` : ""));
+    log(`${chunks.length} chunk(s); uploading ${dirty.size} dirty chunk(s) / ${newPhotos} new photo(s)`
+      + (skipped ? ` (${skipped} already uploaded, skipped)` : ""));
     return { files: files.length, chunks: dirty.size, photos: newPhotos, skipped, sha: sha.slice(0, 7) };
   }
 
@@ -491,11 +632,11 @@
      拉取时又把这个展会原样拉回来——删了等于没删。
      墓碑 meta 很小：只带 id / 名称 / 删除时间，不带任何业务数据。 */
   async function pushTombstone(fairId) {
-    if (!configured()) throw new Error("请先填写 owner / repo / token");
+    if (!configured()) throw new Error("Fill in owner / repo / token first");
     await assertSafe();
     await ensureIdentity();
     const f = await FR.get("fairs", fairId);
-    if (!f) throw new Error("本机没有这个展会");
+    if (!f) throw new Error("This fair does not exist on this device");
     const mp = metaPathOf(fairId);
     const meta = {
       layout: LAYOUT, app: "FairRecorder", user: who(),
@@ -515,7 +656,7 @@
 
   /* 收到云端墓碑：在本机执行同一套删除（不再弹确认——用户在删的那台设备上已经确认过） */
   async function applyRemoteDeletion(fairId, meta) {
-    if (!FR.deleteFairLocal) throw new Error("本机版本太旧，不支持展会删除，请更新页面");
+    if (!FR.deleteFairLocal) throw new Error("This device runs an older build without fair deletion — reload the page");
     const r = await FR.deleteFairLocal(fairId, (meta && meta.fair && meta.fair.deletedAt) || null);
     return { deleted: true, id: fairId, name: r.name || fairId,
              suppliers: r.suppliers || 0, plans: r.plans || 0, photos: r.photos || 0 };
@@ -540,8 +681,8 @@
   }
 
   async function pull() {
-    if (!configured()) throw new Error("请先填写 owner / repo / token");
-    if (!FR.fair) throw new Error("未选择展会");
+    if (!configured()) throw new Error("Fill in owner / repo / token first");
+    if (!FR.fair) throw new Error("No fair selected");
     await ensureIdentity();
 
     const st = await Syncer.fetchStructure();
@@ -554,13 +695,13 @@
       try {
         const list = await listRemoteFairs();
         if (list.length) {
-          hint = " 云端现有 " + list.length + " 个展会："
-            + list.map((f) => f.name + "（" + f.suppliers + " 条）").join("、")
-            + "。请用「📥 拉取云端全部展会」——它会把展会连同记录一起带到本机，"
-            + "不需要两端先建同名展会。";
+          hint = " The cloud holds " + list.length + " fair(s): "
+            + list.map((f) => f.name + " (" + f.suppliers + " records)").join(", ")
+            + ". Use Pull all fairs from cloud — it brings the fair and its records here, "
+            + "no need to create the same fair on both sides first.";
         }
       } catch (e) { /* 列不出来就不附加提示 */ }
-      throw new Error("云端没有本展会（" + (FR.fair.name || FR.fair.id) + "）的备份。" + hint);
+      throw new Error("No cloud backup of this fair (" + (FR.fair.name || FR.fair.id) + ")." + hint);
     }
 
     /* 旧版布局：直接是一整个 bundle */
@@ -579,8 +720,8 @@
     let key = null;
     if (meta.encrypted) {
       const pass = ($("#syPass") && $("#syPass").value) || "";
-      if (!pass) throw new Error("云端数据已加密，请先在上方填写加密口令再恢复");
-      if (!meta.enc || !meta.enc.salt) throw new Error("云端缺少加密参数，无法解密");
+      if (!pass) throw new Error("The cloud copy is encrypted — enter the passphrase above before restoring");
+      if (!meta.enc || !meta.enc.salt) throw new Error("Encryption parameters are missing in the cloud; cannot decrypt");
       key = await deriveKey(pass, meta.enc.salt);
     }
 
@@ -618,7 +759,7 @@
 
   /* 云端某个人的全部展会——新设备靠它发现"我有哪些展会" */
   async function listRemoteFairs() {
-    if (!configured()) throw new Error("请先填写 owner / repo / token");
+    if (!configured()) throw new Error("Fill in owner / repo / token first");
     await ensureIdentity();
     const st = await Syncer.fetchStructure();
     const base = `${userRoot()}/fairs/`;
@@ -654,13 +795,13 @@
 
   /* 拉取指定展会（不依赖当前选中的展会，供全量拉取复用） */
   async function pullFair(fairId, opts) {
-    if (!configured()) throw new Error("请先填写 owner / repo / token");
+    if (!configured()) throw new Error("Fill in owner / repo / token first");
     await ensureIdentity();
     const wantPhotos = !opts || opts.photos !== false;
     const st = await Syncer.fetchStructure();
     const base = `${userRoot()}/fairs/${fairId}`;
     const me = st.find(`${base}/meta.json`);
-    if (!me) throw new Error("云端没有这个展会的备份");
+    if (!me) throw new Error("No cloud backup of this fair");
     const meta = JSON.parse(await Syncer.fetchContent(me, true));
 
     if (meta.layout === LEGACY_LAYOUT) {
@@ -677,8 +818,8 @@
     let key = null;
     if (meta.encrypted) {
       const pass = ($("#syPass") && $("#syPass").value) || "";
-      if (!pass) throw new Error("云端数据已加密，请先填写加密口令再拉取");
-      if (!meta.enc || !meta.enc.salt) throw new Error("云端缺少加密参数，无法解密");
+      if (!pass) throw new Error("The cloud copy is encrypted — enter the passphrase before pulling");
+      if (!meta.enc || !meta.enc.salt) throw new Error("Encryption parameters are missing in the cloud; cannot decrypt");
       key = await deriveKey(pass, meta.enc.salt);
     }
 
@@ -744,13 +885,13 @@
 
   /* 双向同步：先拉云端较新的，再把本机较新的推上去 */
   async function syncNow(scope) {
-    if (!FR.fair) throw new Error("请先选择一个展会");
+    if (!FR.fair) throw new Error("Select a fair first");
     const out = { pulled: null, pushed: null };
     try {
       out.pulled = await pullFair(FR.fair.id, { photos: (scope || S.scope) === "full" });
     } catch (e) {
-      if (!/没有这个展会|没有本展会/.test(e.message)) throw e;
-      out.pulled = { skipped: "云端还没有这个展会，直接进入上传" };
+      if (!/does not exist on this device|No cloud backup of this fair/.test(e.message)) throw e;
+      out.pulled = { skipped: "no cloud copy of this fair yet — going straight to upload" };
     }
     /* 拉下来的是墓碑：本机刚被删掉，这一步就到此为止，别再往回推 */
     if (out.pulled && out.pulled.deleted) return out;
@@ -764,7 +905,7 @@
     if (known.some((x) => x.id === f.id)) return;
     await FR.put("fairs", Object.assign({
       id: f.id, name: "", nameEn: "", city: "", venue: "", area: "", phase: "",
-      startDate: "", endDate: "", defaultHall: "A区", notes: "", archived: false,
+      startDate: "", endDate: "", defaultHall: "Hall A", notes: "", archived: false,
       lastPushAt: null, createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(), deletedAt: null,
     }, f));
@@ -815,15 +956,15 @@
     try {
       const st = await Syncer.fetchStructure();
       const meta = await readMeta(st);
-      if (!meta) return "无本展会备份";
+      if (!meta) return "No backup of this fair";
       if (meta.layout === LEGACY_LAYOUT) {
         const d = meta.__legacy;
-        return `旧版布局 · ${(d.suppliers || []).length} 条 · ${(d.photos || []).length} 张`;
+        return `legacy layout · ${(d.suppliers || []).length} records · ${(d.photos || []).length} photos`;
       }
-      const enc = meta.encrypted ? " · 已加密" : "";
-      return `${meta.counts.suppliers} 条 · ${meta.counts.photos} 张 · ${meta.chunks.length} 块${enc}`;
+      const enc = meta.encrypted ? " · encrypted" : "";
+      return `${meta.counts.suppliers} records · ${meta.counts.photos} photos · ${meta.chunks.length} chunks${enc}`;
     } catch (e) {
-      return "读取失败：" + e.message;
+      return "Read failed: " + e.message;
     }
   }
 
@@ -858,24 +999,24 @@
       const list = await listRemoteFairs();
       if (box) {
         box.classList.remove("hide");
-        box.innerHTML = "<b>云端展会（" + list.length + "）</b><br>"
+        box.innerHTML = "<b>Cloud fairs (" + list.length + ")</b><br>"
           + (list.length
             ? list.map((f) => esc(f.name)
               + (f.dates ? " · " + esc(f.dates) : "")
-              + (f.deleted ? " · <b>已删除（墓碑）</b>" : " · " + f.suppliers + " 条 / " + f.photos + " 张")
-              + (f.encrypted ? " · 已加密" : "")).join("<br>")
-            : "<i>云端还没有任何展会</i>");
+              + (f.deleted ? " · <b>deleted (tombstone)</b>" : " · " + f.suppliers + " records / " + f.photos + " photos")
+              + (f.encrypted ? " · encrypted" : "")).join("<br>")
+            : "<i>No fairs in the cloud yet</i>");
       }
       log(list.length
-        ? "云端有 " + list.length + " 个展会：" + list.map((f) => f.name).join("、")
-        : "云端还没有展会——在本机备份一次后就会出现");
+        ? list.length + " fair(s) in the cloud: " + list.map((f) => f.name).join(", ")
+        : "No fairs in the cloud yet — they appear after the first backup from this device");
       return list;
     } catch (e) {
       if (box) {
         box.classList.remove("hide");
-        box.innerHTML = "<i>读不到云端展会：" + esc(e.message) + "</i>";
+        box.innerHTML = "<i>Could not read the cloud fair list: " + esc(e.message) + "</i>";
       }
-      log("云端展会清单读取失败：" + e.message);
+      log("Failed to read the cloud fair list: " + e.message);
       return [];
     }
   }
@@ -886,33 +1027,33 @@
       const el = $(id); if (!el) return;
       el.textContent = v; if (color) el.style.color = color;
     };
-    set("#syPending", pend ? `${pend} 条待上传` : "无（本地与云端一致）",
+    set("#syPending", pend ? `${pend} pending` : "None (local and cloud match)",
       pend ? "var(--warn)" : "var(--accent)");
-    set("#syLocal", `${FR.suppliers.length} 条 / ${FR.photos.length} 张`);
-    set("#syLast", S.lastSyncAt ? new Date(S.lastSyncAt).toLocaleString("zh-CN") : "从未");
+    set("#syLocal", `${FR.suppliers.length} records / ${FR.photos.length} photos`);
+    set("#syLast", S.lastSyncAt ? new Date(S.lastSyncAt).toLocaleString("en-GB") : "Never");
     /* 把命名空间完整显示出来：「拉不到数据」的第二大原因就是身份没识别出来，
      * 于是读写的是 users//fairs/ 而不是 users/<登录名>/fairs/。让用户一眼能核对。 */
     const w = S.login || S.namespace || "";
     set("#syWho", w ? `${w} → ${(S.root || "users")}/${w}`
-      : "未确定 ⚠️ 请在下方「访问者命名空间」手填",
+      : "Unknown — fill in the visitor namespace below",
       w ? undefined : "var(--danger)");
-    try { set("#sySpace", FR.fair ? fairRoot() : "未选择展会"); }
-    catch (e) { set("#sySpace", "需先确定访问者身份"); }
-    set("#syFair", FR.fair ? (FR.fair.name || FR.fair.nameEn || "（未命名）") : "未选择展会");
+    try { set("#sySpace", FR.fair ? fairRoot() : "No fair selected"); }
+    catch (e) { set("#sySpace", "Visitor identity required"); }
+    set("#syFair", FR.fair ? (FR.fair.name || FR.fair.nameEn || "(untitled)") : "No fair selected");
 
-    set("#syVis", S.repoPrivate === true ? "私有 ✅ 可备份"
-      : S.repoPrivate === false ? "公开 ⚠️ 已禁止上传"
-      : (configured() ? "未校验" : "未配置"),
+    set("#syVis", S.repoPrivate === true ? "Private — backup allowed"
+      : S.repoPrivate === false ? "Public — upload blocked"
+      : (configured() ? "Not checked" : "Not configured"),
       S.repoPrivate === true ? "var(--accent)"
         : S.repoPrivate === false ? "var(--danger)" : "var(--muted)");
 
-    set("#syCollab", "读取中…");
-    set("#syRemote", configured() && FR.fair ? "读取中…" : "未配置");
+    set("#syCollab", "Loading...");
+    set("#syRemote", configured() && FR.fair ? "Loading..." : "Not configured");
     if (configured() && FR.fair) {
-      remoteCount().then((r) => set("#syRemote", r)).catch(() => set("#syRemote", "读取失败"));
+      remoteCount().then((r) => set("#syRemote", r)).catch(() => set("#syRemote", "Read failed"));
       Syncer.getCollaborators().then((c) => {
-        if (!c) { set("#syCollab", "读不到（token 权限不足）"); return; }
-        set("#syCollab", c.length ? c.map((x) => x.login).join("、") : "仅仓库 owner");
+        if (!c) { set("#syCollab", "Unreadable (token lacks permission)"); return; }
+        set("#syCollab", c.length ? c.map((x) => x.login).join(", ") : "Repository owner only");
       });
     }
   }
@@ -927,7 +1068,7 @@
     const tk = $("#syToken");
     if (tk) {
       tk.value = "";
-      tk.placeholder = S.token ? "已保存（留空则不修改）" : "github_pat_… / ghp_…";
+      tk.placeholder = S.token ? "Saved (leave blank to keep)" : "github_pat_… / ghp_…";
     }
 
     const chip = (group, val) => {
@@ -948,12 +1089,12 @@
       };
     });
     bind("syScope", async (v) => { S.scope = v; await saveCfg(); });
-    bind("syAuto", async (v, txt) => { S.autoMode = v; await saveCfg(); log("自动备份：" + txt); });
+    bind("syAuto", async (v, txt) => { S.autoMode = v; await saveCfg(); log("Auto backup: " + txt); });
     bind("syAutoScope", async (v) => { S.autoScope = v; await saveCfg(); });
     bind("syEnc", async (v, txt) => {
       S.encrypt = v === "on";
       await saveCfg();
-      log("云端加密：" + txt + (S.encrypt ? "（请务必记住口令，丢失无法恢复）" : ""));
+      log("Cloud encryption: " + txt + (S.encrypt ? " (remember the passphrase — it cannot be recovered)" : ""));
     });
 
     $("#sySave").onclick = async () => {
@@ -961,132 +1102,157 @@
       S.repo = $("#syRepo").value.trim();
       S.branch = $("#syBranch").value.trim() || "main";
       S.root = $("#syRoot").value.trim() || "users";
-      const typed = $("#syToken").value.trim();
-      if (typed) S.token = typed;                   /* 留空 = 沿用已保存的 token */
+      /* 留空 = 沿用已保存的 token。粘贴进来的值先洗掉换行与零宽字符：
+       * 它们肉眼不可见，却会让请求在发出去之前就失败。 */
+      const rawToken = $("#syToken").value;
+      const typed = cleanToken(rawToken);
+      if (typed) S.token = typed;
+      if (typed && typed !== rawToken) {
+        log("Token cleaned: removed " + (rawToken.length - typed.length)
+          + " invisible/whitespace character(s) picked up while copying");
+      }
       S.namespace = $("#syNamespace").value.trim();
       S.repoPrivate = null;                         // 换仓库后必须重新校验
       await saveCfg();
-      log("配置已保存到本机");
-      FR.toast("已保存");
+      log("Settings saved on this device");
+      FR.toast("Saved");
       /* 保存后立刻校验一次：仓库是不是私有、我是谁，要让用户在保存的当下就看到，
        * 而不是等他点「立即备份」才发现填错了仓库或没识别出身份。 */
       if (configured()) {
         try {
           const r = await testConnection();
-          log("连接成功：" + r);
+          log("Connected: " + r);
           /* 先把身份/可见性刷出来（本地读，瞬间），再去读云端清单（要走网络）。
            * 反过来会让用户干等好几秒才看到"我是谁"。 */
           try { await renderStatus(); } catch (e) { /* 不因状态刷新中断 */ }
           await showRemoteList();
         } catch (e) {
-          log("校验未通过：" + e.message);
-          FR.toast("请检查配置：" + e.message, 5000);
+          log("Validation failed: " + e.message);
+          FR.toast("Check the settings: " + shortErr(e.message) + " (details in the log below)", 7000);
         }
       }
-      try { await renderStatus(); } catch (e) { log("状态刷新失败：" + e.message); }
+      try { await renderStatus(); } catch (e) { log("Status refresh failed: " + e.message); }
     };
 
     $("#syTest").onclick = async () => {
       try {
-        log("测试连接…");
+        log("Testing connection...");
         const r = await testConnection();
-        log("连接成功：" + r);
-        FR.toast("连接成功", 3000);
+        log("Connected: " + r);
+        FR.toast("Connected", 3000);
         await renderStatus();
-      } catch (e) { log("连接失败：" + e.message); FR.toast("连接失败：" + e.message, 4000); }
+      } catch (e) {
+        log("Connection failed: " + e.message);
+        FR.toast("Connection failed: " + shortErr(e.message) + " (details in the log below)", 7000);
+      }
+    };
+
+    /* 按钮可能不存在（HTML 与 JS 版本错配时），不能因此让整页初始化失败 */
+    const diagBtn = $("#syDiag");
+    if (diagBtn) diagBtn.onclick = async () => {
+      FR.toast("Checking the network…", 2000);
+      try {
+        const ok = await diagnose();
+        FR.toast(ok ? "api.github.com is reachable — check the log"
+          : "api.github.com is unreachable — this is the network, not the app", 6000);
+      } catch (e) {
+        log("Diagnosis failed: " + e.message);
+        FR.toast("Diagnosis failed: " + shortErr(e.message), 5000);
+      }
     };
 
     const doPush = async (scope, label) => {
       try {
-        log("开始备份（" + label + "）…");
+        log("Starting backup (" + label + ")...");
         const r = await Scheduler.run(() => push(scope));
         if (!r) return;                              // 被后来的请求顶掉
-        log(`备份完成：${r.files} 个文件（脏块 ${r.chunks}，新照片 ${r.photos}，`
-          + `跳过 ${r.skipped}），commit ${r.sha}`);
-        FR.toast("备份完成", 4000);
+        log(`Backup done: ${r.files} file(s) (dirty chunks ${r.chunks}, new photos ${r.photos}, `
+          + `skipped ${r.skipped}), commit ${r.sha}`);
+        FR.toast("Backup done", 4000);
         await renderStatus();
       } catch (e) {
-        if (e && e.name === "AbortError") { log("备份已取消（有新的同步请求）"); return; }
-        log("备份失败：" + e.message); FR.toast("备份失败：" + e.message, 5000);
+        if (e && e.name === "AbortError") { log("Backup cancelled (a newer sync request came in)"); return; }
+        log("Backup failed: " + e.message);
+        FR.toast("Backup failed: " + shortErr(e.message) + " (details in the log below)", 7000);
       }
     };
     $("#syPush").onclick = () => doPush(S.scope,
-      S.scope === "full" ? "元数据 + 原图" : "仅元数据");
-    $("#syPushFull").onclick = () => doPush("full", "元数据 + 原图，流量大");
+      S.scope === "full" ? "metadata + originals" : "metadata only");
+    $("#syPushFull").onclick = () => doPush("full", "metadata + originals, heavy");
 
     $("#syPull").onclick = async () => {
       try {
         if (!FR.fair) {
-          FR.toast("请先在展会页选择一个展会。新设备请改用「📥 拉取云端全部展会」", 5000);
+          FR.toast("Pick a fair on the Fairs screen first. On a new device use Pull all fairs from cloud", 5000);
           return;
         }
-        if (!confirm("从云端恢复到本展会（" + (FR.fair.name || FR.fair.nameEn || FR.fair.id)
-          + "）：只覆盖云端更新的版本，本机较新的记录不会被覆盖。继续？")) return;
-        log("开始拉取…");
+        if (!confirm("Restore this fair from the cloud (" + (FR.fair.name || FR.fair.nameEn || FR.fair.id)
+          + ")? Only newer cloud copies are applied; newer local records are kept. Continue?")) return;
+        log("Starting pull...");
         const r = await Scheduler.run(() => pull());
         if (!r) return;
         if (r.deleted) {
-          log(`「${r.name}」在云端已被删除 —— 本机副本已同步删除`
-            + `（记录 ${r.suppliers} / 计划 ${r.plans} / 照片 ${r.photos}）`);
-          FR.toast("该展会已在别处被删除，本机已同步删除", 6000);
+          log(`"${r.name}" was deleted in the cloud — the local copy was removed too`
+            + ` (records ${r.suppliers} / planned ${r.plans} / photos ${r.photos})`);
+          FR.toast("This fair was deleted elsewhere; the local copy is gone too", 6000);
           await renderStatus();
           return;
         }
-        log(`拉取完成：记录 ${r.suppliers} / 计划 ${r.plans} / 照片 ${r.photos}（云端共 ${r.remote} 条）`);
-        FR.toast("恢复完成", 4000);
+        log(`Pull done: records ${r.suppliers} / planned ${r.plans} / photos ${r.photos} (${r.remote} in the cloud)`);
+        FR.toast("Restore done", 4000);
         await renderStatus();
       } catch (e) {
-        if (e && e.name === "AbortError") { log("拉取已取消"); return; }
-        log("拉取失败：" + e.message); FR.toast("拉取失败：" + e.message, 5000);
+        if (e && e.name === "AbortError") { log("Pull cancelled"); return; }
+        log("Pull failed: " + e.message); FR.toast("Pull failed: " + e.message, 5000);
       }
     };
 
     /* --- 双向同步：换设备后最常用的动作 --- */
     $("#sySync").onclick = async () => {
       try {
-        if (!FR.fair) { FR.toast("请先选择一个展会", 4000); return; }
+        if (!FR.fair) { FR.toast("Select a fair first", 4000); return; }
         const scope = S.scope || "meta";
-        log(`开始双向同步（${scope === "full" ? "含原图" : "仅元数据"}）…`);
+        log(`Starting two-way sync (${scope === "full" ? "with originals" : "metadata only"})...`);
         const r = await Scheduler.run(() => syncNow(scope));
         if (!r) return;
         const p = r.pulled || {};
-        if (p.skipped) log("拉取：" + p.skipped);
-        else log(`拉取：记录 ${p.suppliers} / 照片 ${p.photos}（云端较新的已合并）`);
-        log(`上传：${r.pushed.files} 个文件（脏块 ${r.pushed.chunks}，新照片 ${r.pushed.photos}），commit ${r.pushed.sha}`);
-        FR.toast("双向同步完成", 4000);
+        if (p.skipped) log("Pull: " + p.skipped);
+        else log(`Pull: records ${p.suppliers} / photos ${p.photos} (newer cloud copies merged)`);
+        log(`Push: ${r.pushed.files} file(s) (dirty chunks ${r.pushed.chunks}, new photos ${r.pushed.photos}), commit ${r.pushed.sha}`);
+        FR.toast("Two-way sync done", 4000);
         await renderStatus();
       } catch (e) {
-        if (e && e.name === "AbortError") { log("同步已取消"); return; }
-        log("同步失败：" + e.message); FR.toast("同步失败：" + e.message, 5000);
+        if (e && e.name === "AbortError") { log("Sync cancelled"); return; }
+        log("Sync failed: " + e.message); FR.toast("Sync failed: " + e.message, 5000);
       }
     };
 
     /* --- 拉取云端全部展会（换设备后的第一步） --- */
     $("#syPullAll").onclick = async () => {
       try {
-        log("正在读取云端展会清单…");
+        log("Reading the cloud fair list...");
         const list = await Scheduler.run(() => showRemoteList());
         if (!list || !list.length) return;
         const withPhotos = confirm(
-          "将拉取云端 " + list.length + " 个展会。\n\n"
-          + "点「确定」= 连照片一起拉（流量较大）\n点「取消」= 只拉记录与元数据");
-        log("开始拉取全部展会（" + (withPhotos ? "含照片" : "仅记录") + "）…");
+          "Pull " + list.length + " fair(s) from the cloud.\n\n"
+          + "OK = include photos (more data)\nCancel = records and metadata only");
+        log("Pulling all fairs (" + (withPhotos ? "with photos" : "records only") + ")...");
         const res = await Scheduler.run(() => pullAll({ photos: withPhotos }));
         if (!res) return;
         let ns = 0, np = 0, err = 0, nd = 0;
         for (const r of res) {
           if (r.error) { err++; log("  ✗ " + r.name + "：" + r.error); }
-          else if (r.deleted) { nd++; log("  🗑 " + r.name + "：云端已删除，本机已同步删除"); }
-          else { ns += r.suppliers || 0; np += r.photos || 0; log("  ✓ " + r.name + "：记录 " + r.suppliers + " / 照片 " + r.photos); }
+          else if (r.deleted) { nd++; log("  🗑 " + r.name + ": deleted in the cloud, local copy removed"); }
+          else { ns += r.suppliers || 0; np += r.photos || 0; log("  ✓ " + r.name + ": records " + r.suppliers + " / photos " + r.photos); }
         }
-        log(`全部拉取完成：新增/更新记录 ${ns} 条、照片 ${np} 张`
-          + (nd ? `，同步删除 ${nd} 个展会` : "") + (err ? `，失败 ${err} 个` : ""));
-        FR.toast("已拉取全部展会", 4000);
+        log(`All fairs pulled: ${ns} record(s) added or updated, ${np} photo(s)`
+          + (nd ? `, ${nd} fair(s) deleted here too` : "") + (err ? `, ${err} failed` : ""));
+        FR.toast("All fairs pulled", 4000);
         await renderStatus();
-        if (ns || np) FR.toast("展会已同步到本机，可回展会页切换", 5000);
+        if (ns || np) FR.toast("Fairs synced to this device — go back to Fairs to switch", 5000);
       } catch (e) {
-        if (e && e.name === "AbortError") { log("已取消"); return; }
-        log("拉取失败：" + e.message); FR.toast("拉取失败：" + e.message, 5000);
+        if (e && e.name === "AbortError") { log("Cancelled"); return; }
+        log("Pull failed: " + e.message); FR.toast("Pull failed: " + e.message, 5000);
       }
     };
 
@@ -1094,35 +1260,36 @@
     $("#syPushAll").onclick = async () => {
       try {
         const scope = S.scope || "meta";
-        if (!confirm("将备份本机所有未归档的展会（" + scope
-          + (scope === "full" ? "，含原图" : "，仅元数据") + "）。继续？")) return;
-        log("开始备份全部展会…");
+        if (!confirm("Back up every active fair on this device (" + scope
+          + (scope === "full" ? ", with originals" : ", metadata only") + "). Continue?")) return;
+        log("Backing up all fairs...");
         const res = await Scheduler.run(() => pushAll(scope));
         if (!res) return;
         for (const r of res) {
           if (r.error) log("  ✗ " + r.name + "：" + r.error);
-          else if (r.tombstone) log("  🗑 " + r.name + "：墓碑已上传，其他设备同步后会删除");
-          else log("  ✓ " + r.name + "：" + r.files + " 个文件，commit " + r.sha);
+          else if (r.tombstone) log("  🗑 " + r.name + ": tombstone uploaded, other devices will delete it");
+          else log("  ✓ " + r.name + ": " + r.files + " file(s), commit " + r.sha);
         }
-        log("全部展会备份完成（" + res.length + " 个）");
-        FR.toast("全部展会已备份", 4000);
+        log("All fairs backed up (" + res.length + ")");
+        FR.toast("All fairs backed up", 4000);
         await renderStatus();
       } catch (e) {
-        if (e && e.name === "AbortError") { log("已取消"); return; }
-        log("备份失败：" + e.message); FR.toast("备份失败：" + e.message, 5000);
+        if (e && e.name === "AbortError") { log("Cancelled"); return; }
+        log("Backup failed: " + e.message);
+        FR.toast("Backup failed: " + shortErr(e.message) + " (details in the log below)", 7000);
       }
     };
 
     $("#syInvite").onclick = () => {
-      if (!configured()) { FR.toast("请先填写并保存 owner / repo", 4000); return; }
+      if (!configured()) { FR.toast("Fill in and save owner / repo first", 4000); return; }
       window.open(`https://github.com/${S.owner}/${S.repo}/settings/access`, "_blank");
-      log("已打开协作邀请页：Settings → Collaborators → Add people");
+      log("Opened the collaborator page: Settings → Collaborators → Add people");
     };
   };
 
   /* 供自动备份定时器调用 */
   window.FRSync = {
-    push, pull, ready, testConnection, pushTombstone,
+    push, pull, ready, testConnection, pushTombstone, diagnose,
     /* 多终端：发现云端展会 / 拉取单个 / 拉全部 / 推全部 / 双向同步 */
     listRemoteFairs, pullFair, pullAll, pushAll, syncNow,
     get busy() { return Scheduler.busy; },

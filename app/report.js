@@ -18,7 +18,7 @@
     return (s.categories || []).map(catEn);
   }
   function marketEn(m) {
-    return U().labelOf(C().MARKETS, m) || m;
+    return valEn(U().labelOf(C().MARKETS, m)) || m;
   }
   function marketsEn(s) {
     return (s.exportMarkets || []).map(marketEn);
@@ -58,7 +58,8 @@
     return s.leadTimeDays ? s.leadTimeDays + " d" : "n/a";
   }
   function boothText(s) {
-    return [s.hall, s.area, s.boothNo].filter(Boolean).join(" / ") || "—";
+    /* hall / area 在旧记录里是中文值，输出前统一换成英文 */
+    return [valEn(s.hall), valEn(s.area), s.boothNo].filter(Boolean).join(" / ") || "—";
   }
   function tierClass(t) {
     return t === "Shortlist" ? "b-short" : t === "Follow-up" ? "b-follow"
@@ -105,8 +106,10 @@
       s._state = U().stateOf(s);
       s._missing = U().missing(s);
       s._score = U().weightedScore(s, weights);
-      s._rankable = s._score != null;
-      s._tier = s._score != null ? U().tierOf(s._score) : (s._state === "draft" ? "Draft" : "Not rated");
+      /* 与 fairlib 同口径：只有 rated（字段齐 + 三项都打过分）才参与排名。
+         草稿哪怕算得出分数也不能进 Shortlist / Reserve。 */
+      s._rankable = s._state === "rated";
+      s._tier = s._rankable ? U().tierOf(s._score) : "Not ranked";
       s._blockers = U().complianceBlockers(s);
     }
     const rated = suppliers.filter((s) => s._rankable);
@@ -163,7 +166,7 @@
       suppliers, plans, picks, photoIndex, weights, topN,
       fairs, fair: primary, summary: summaryTxt,
       event: {
-        name: primary.nameEn || primary.name || "Supplier Visit",
+        name: primary.nameEn || primary.name || "Factory Visit",
         phase: primary.phase || "",
         dates: dateTxt,
         venue: [primary.city, primary.venue].filter(Boolean).join(" · "),
@@ -190,11 +193,23 @@
       const cs = (s.categories && s.categories.length) ? s.categories : ["other"];
       for (const c of cs) (buckets[c] = buckets[c] || []).push(s);
     }
+    /* 与 scripts/build_report.py 的 grouped_by_category 同口径：
+       品类之间数量多的在前（同数量按 CATEGORIES 表顺序，sort 稳定）；
+       组内可评分的在前、分数高的在前、同分按公司名，免得手机和电脑两边表不同序。 */
     const keys = Object.keys(buckets).sort((a, b) => {
+      const d = buckets[b].length - buckets[a].length;
+      if (d) return d;
       const ia = order.indexOf(a), ib = order.indexOf(b);
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
-    return keys.map((k) => [k, catEn(k), buckets[k].sort((a, b) => (b._score || -1) - (a._score || -1))]);
+    const byName = (a, b) => String(a._company || "").localeCompare(String(b._company || ""));
+    return keys.map((k) => [k, catEn(k), buckets[k].slice().sort((a, b) => {
+      const ra = a._rankable ? 0 : 1, rb = b._rankable ? 0 : 1;
+      if (ra !== rb) return ra - rb;
+      const sa = a._score == null ? -1 : a._score, sb = b._score == null ? -1 : b._score;
+      if (sb !== sa) return sb - sa;
+      return byName(a, b);
+    })]);
   }
 
   /* ---------------------- HTML report ---------------------- */
@@ -215,7 +230,11 @@ h3{font-size:17px;margin:22px 0 8px}
 table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
 /* 第 1 章的清单表有 6 列，手机窄屏会挤成一团，包一层横向滚动 */
 .scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table.list{min-width:660px}
+table.list{min-width:660px;table-layout:auto}
+/* keep the rating cell on one line — "Low priority" / "Not ranked" must not wrap */
+table.list td:last-child,table.list th:last-child{white-space:nowrap}
+/* Chapter 1: per-category group heading */
+.grph{font-size:15px;font-weight:700;color:var(--acc);margin:16px 0 8px}
 th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
 th{background:var(--acc);color:#fff;font-weight:600}
 tbody tr:nth-child(even) td{background:var(--soft2)}
@@ -230,7 +249,7 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
 .b-draft{background:#FDECEC;color:#B3261E}
 .warn{background:#FFF7E6;border:1px solid #F2D194;color:#8A5300;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:14px}
 .mut{color:var(--mut)}.small{font-size:13px}
-/* 名片 / 亮点产品：与基础信息用虚线隔开，否则一堆 kv 行糊成一片 */
+/* Name card / highlight products: dashed divider, otherwise every kv row blurs together */
 .blk{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
 .blkt{font-size:13px;font-weight:700;color:var(--acc);letter-spacing:.3px;margin-bottom:8px}
 .hl{border-left:3px solid var(--acc);padding:2px 0 8px 12px;margin:12px 0}
@@ -368,23 +387,55 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
       .split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean);
   }
 
-  /* ---------------------- 第 1 章：供应商清单 ----------------------
-     以前这一章只有一行「Suppliers recorded: N」，等于把整份报告变成盲盒——
-     不翻到第 2 章根本不知道这趟展会见了谁。现在按同样的排序（评分高的在前）
-     把每家列一行，一眼能扫到公司名、展位、品类、联系人和评级。
+  /* ---------------------- 第 1 章：工厂清单 ----------------------
+     以前这一章只有一行统计，等于把整份报告变成盲盒——不翻到第 2 章根本不知道
+     这趟展会见了谁。现在按 Categories 分组，逐家列一行（组内评分高的在前），
+     一眼能扫到公司名、展位、品类、联系人和评级。
      单元格里的 \n 由两侧渲染各自处理：HTML 转 <br>，DOCX 转多段 w:p。 */
   const LIST_COLS = ["#", "Company", "Booth / Hall", "Categories", "Contact", "Rating"];
   const LIST_WIDTHS = [500, 2400, 1200, 1600, 2000, 1939];   // 合计 9639 = A4 版心
+
+  /* 旧记录里 hall / area / title 存过中文值，报告必须输出英文，否则分享出去一半中文。 */
+  const LEGACY_EN = {
+    "A区":"Hall A", "B区":"Hall B", "C区":"Hall C", "D区":"Hall D", "未定":"TBD",
+    "卫浴设备":"Bathroom Equipment", "建筑装饰材料":"Building Materials",
+    "家居用品":"Household Goods", "玻璃工艺品":"Glass & Crafts", "餐厨用具":"Kitchenware",
+    "家具":"Furniture", "进口展":"International Pavilion", "其他":"Other",
+    "Sales 销售":"Sales", "Manager 经理":"Manager", "Owner 负责人":"Owner",
+    "Engineer 工程师":"Engineer", "Director 总监":"Director",
+    "Germany 德国":"Germany", "EU (other) 欧盟其他":"EU (other)", "UK 英国":"UK",
+    "North America 北美":"North America", "Middle East 中东":"Middle East",
+    "Asia (other) 亚洲其他":"Asia (other)", "Other 其他":"Other"
+  };
+  function valEn(v) {
+    const t = String(v == null ? "" : v).trim();
+    return LEGACY_EN[t] || v;
+  }
+  function factors(n) { return n === 1 ? "1 factory" : n + " factories"; }
+
+  function listRow(s, i) {
+    const who = [s.contactName, valEn(s.contactTitle)].filter(Boolean).join(" / ");
+    const ways = [s.phone, s.wechat, s.email].filter(Boolean).join(" · ");
+    const contact = [who, ways].filter(Boolean).join("\n") || "—";
+    const rating = [(s._rankable && s._score != null) ? String(s._score) : "—", s._tier || ""]
+      .filter(Boolean).join("\n");
+    return [String(i), s._company || companyOf(s), boothText(s),
+      catsEn(s).join(", ") || "—", contact, rating || "—"];
+  }
+
+  /* 按 Categories 分组，顺序与第 2 章 Catalogue 一致（CATEGORIES 表顺序）。
+     一家同时挂多个品类时会在多个组里各出现一次——清单本来就是查阅索引，
+     和 Catalogue 一样"按品类能找到它"优先于"每行只出现一次"。 */
+  function listGroups(ctx) {
+    const rows = [];
+    for (const [, name, items] of grouped(ctx)) {
+      rows.push({ name, rows: items.map((s, i) => listRow(s, i + 1)) });
+    }
+    return rows;
+  }
+  /* 兼容旧调用：拍平成"每条一行"的数组（Excel 等按行消费的地方用） */
   function listRows(ctx) {
-    return (ctx.suppliers || []).map((s, i) => {
-      const who = [s.contactName, s.contactTitle].filter(Boolean).join(" / ");
-      const ways = [s.phone, s.wechat, s.email].filter(Boolean).join(" · ");
-      const contact = [who, ways].filter(Boolean).join("\n") || "—";
-      const rating = [(s._rankable && s._score != null) ? String(s._score) : "—", s._tier || ""]
-        .filter(Boolean).join("\n");
-      return [String(i + 1), s._company || companyOf(s), boothText(s),
-        catsEn(s).join(", ") || "—", contact, rating || "—"];
-    });
+    return (ctx.suppliers || []).map((s, i) => listRow(s, i + 1));
   }
 
   function supplierCard(ctx, s) {
@@ -396,12 +447,13 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
       + `<span class='badge ${tierClass(s._tier)}'>${e(s._tier)}${s._score != null ? " · " + s._score : ""}</span>`
       + `<span class='badge b-follow'>${e(sourceEn(s))}</span></div>`);
     h.push(`<div class='kv'><span class='k'>Booth</span><span>${e(boothText(s))}</span></div>`);
-    const contact = [s.contactName, s.contactTitle].filter(Boolean).join(" / ") || "—";
+    const contact = [s.contactName, valEn(s.contactTitle)].filter(Boolean).join(" / ") || "—";
     const ways = [s.phone, s.wechat, s.email].filter(Boolean).join(" · ");
     h.push(`<div class='kv'><span class='k'>Contact</span><span>${e(contact)}${ways ? " · " + e(ways) : ""}</span></div>`);
     h.push(`<div class='kv'><span class='k'>Products</span><span>${e(s.productDetails || "—")}</span></div>`);
     h.push(`<div class='kv'><span class='k'>Capacity / Markets</span><span>${e(capText(s))} · `
       + `${e(marketsEn(s).join(", ") || "—")} · EU/DE experience: ${e(s.euGermanyExperience || "Unknown")}</span></div>`);
+    if (s.intent) h.push(`<div class='kv'><span class='k'>Note / intention</span><span>${e(s.intent)}</span></div>`);
     if (s.notes) h.push(`<div class='kv'><span class='k'>Notes</span><span>${e(s.notes)}</span></div>`);
     if (s.nextAction) {
       h.push(`<div class='kv'><span class='k'>Next action</span><span>${e(s.nextAction)}${s.nextActionDate ? " · due " + e(s.nextActionDate) : ""}</span></div>`);
@@ -461,33 +513,36 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
     const h = [];
     h.push("<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>");
     h.push("<meta name='viewport' content='width=device-width,initial-scale=1'>");
-    h.push(`<title>Supplier Report — ${e(ev.name)}</title><style>${CSS}</style></head><body><div class='wrap'>`);
+    h.push(`<title>Factory Report — ${e(ev.name)}</title><style>${CSS}</style></head><body><div class='wrap'>`);
     h.push("<button id='btnPrint' onclick='window.print()'>🖨 Print / Save as PDF</button>");
 
-    h.push(`<h1>Supplier Report — ${e(ev.name)}</h1>`);
+    h.push(`<h1>Factory Report — ${e(ev.name)}</h1>`);
     h.push(`<div class='sub'>${[e(ev.phase), e(ev.dates), e(ev.venue)].filter(Boolean).join(" · ")}</div>`);
     h.push(`<div class='sub' style='margin-top:8px'>${ev.prepared_for ? "Prepared for: " + e(ev.prepared_for) + " · " : ""}Generated ${e(ctx.generated_at)}</div>`);
 
-    /* 1 —— 供应商清单：总数之后紧接着每家一行关键信息 */
-    h.push("<h2>1. Supplier List</h2><div class='card'>");
-    h.push(`<div class='kv'><span class='k'>Suppliers recorded</span><span>${total}</span></div>`);
+    /* 1 —— 工厂清单：总数之后按 Categories 分组，每组一张明细表 */
+    h.push("<h2>1. Factory List</h2><div class='card'>");
+    h.push(`<div class='kv'><span class='k'>Factories recorded</span><span>${total}</span></div>`);
     if (total) {
-      h.push("<div class='scrollx'><table class='list'><tr>" + LIST_COLS.map((c) => `<th>${e(c)}</th>`).join("") + "</tr>");
-      for (const row of listRows(ctx)) {
-        h.push("<tr>" + row.map((v) => `<td>${e(v).replace(/\n/g, "<br>")}</td>`).join("") + "</tr>");
+      for (const g of listGroups(ctx)) {
+        h.push(`<div class='grph'>${e(g.name)} — ${e(factors(g.rows.length))}</div>`);
+        h.push("<div class='scrollx'><table class='list'><tr>" + LIST_COLS.map((c) => `<th>${e(c)}</th>`).join("") + "</tr>");
+        for (const row of g.rows) {
+          h.push("<tr>" + row.map((v) => `<td>${e(v).replace(/\n/g, "<br>")}</td>`).join("") + "</tr>");
+        }
+        h.push("</table></div>");
       }
-      h.push("</table></div>");
     } else {
-      h.push("<p class='small mut'>No supplier recorded yet.</p>");
+      h.push("<p class='small mut'>No factory recorded yet.</p>");
     }
     h.push("</div>");
 
     /* 2 */
-    h.push("<h2>2. Supplier Catalogue</h2>");
+    h.push("<h2>2. Factory Catalogue</h2>");
     const groups = grouped(ctx);
-    if (!groups.length) h.push("<p class='small mut'>No supplier recorded yet.</p>");
+    if (!groups.length) h.push("<p class='small mut'>No factory recorded yet.</p>");
     for (const [, name, items] of groups) {
-      h.push(`<h3>${e(name)} — ${items.length} supplier(s)</h3>`);
+      h.push(`<h3>${e(name)} — ${e(factors(items.length))}</h3>`);
       for (const s of items) h.push(supplierCard(ctx, s));
     }
 
@@ -516,20 +571,20 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
 
   function masterRows(ctx) {
     const dims = C().SCORE_DIMS;
-    const head = ["Supplier", "Chinese name", "Booth", "Hall/Area", "Categories", "Contact", "Title",
+    const head = ["Factory", "Chinese name", "Booth", "Hall/Area", "Categories", "Contact", "Title",
       "Phone", "WeChat", "Email", "Website", "Products", "MOQ", "Price", "Incoterm", "Lead time (d)",
       "Capacity", "Export markets", "EU/DE experience", "Source", "State", "Score", "Tier"];
     /* v1.7：三项评分先出数值再出各自的评语，方便按栏排序后还能看懂为什么 */
     for (const d of dims) head.push(d[2]);
     for (const d of dims) head.push(d[2] + " comments");
     for (const f of CARD_FIELDS) head.push("Card " + f[1].toLowerCase());
-    head.push("Highlight products", "Follow-up", "Next action", "Due", "Notes");
+    head.push("Highlight products", "Follow-up", "Next action", "Due", "Note / intention", "Notes");
     const rows = [head];
     for (const s of ctx.suppliers) {
       const sc = s.score || {}, sn = s.scoreNotes || {}, card = s.namecard || {};
       rows.push([s.companyNameEn || "", s.companyNameZh || "", s.boothNo || "",
-        [s.hall, s.area].filter(Boolean).join(" / "), catsEn(s).join("; "),
-        s.contactName || "", s.contactTitle || "", s.phone || "", s.wechat || "", s.email || "", s.website || "",
+        [valEn(s.hall), valEn(s.area)].filter(Boolean).join(" / "), catsEn(s).join("; "),
+        s.contactName || "", valEn(s.contactTitle) || "", s.phone || "", s.wechat || "", s.email || "", s.website || "",
         s.productDetails || "", moqText(s), priceText(s), s.incoterm || "", s.leadTimeDays || "",
         capText(s), marketsEn(s).join("; "), s.euGermanyExperience || "", sourceEn(s), s._state,
         s._rankable ? s._score : "not ranked", s._tier]);
@@ -537,7 +592,7 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
       for (const d of dims) rows[rows.length - 1].push(String(sn[d[0]] || "").trim());
       for (const f of CARD_FIELDS) rows[rows.length - 1].push(String(card[f[0]] || "").trim());
       rows[rows.length - 1].push(hlText(s), followupEn(s), s.nextAction || "", s.nextActionDate || "",
-        s.notes || "");
+        s.intent || "", s.notes || "");
     }
     return rows;
   }
@@ -555,7 +610,7 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
     }).filter(Boolean).join(" | ");
   }
   function compareRows(ctx) {
-    const head = ["Category", "Supplier", "Booth", "MOQ", "Price", "Lead time (d)", "EU/DE",
+    const head = ["Category", "Factory", "Booth", "MOQ", "Price", "Lead time (d)", "EU/DE",
       "CE", "EN 14428", "EN 12150", "KTW", "Score", "Tier"];
     const rows = [head];
     for (const [, name, items] of grouped(ctx)) {
@@ -612,9 +667,9 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
 </styleSheet>`;
 
   async function toXLSX(ctx) {
-    if (typeof JSZip === "undefined") throw new Error("JSZip 未加载");
+    if (typeof JSZip === "undefined") throw new Error("JSZip is not loaded");
     const sheets = [
-      { name: "Supplier Master", rows: masterRows(ctx),
+      { name: "Factories", rows: masterRows(ctx),
         widths: [28, 22, 12, 14, 26, 14, 14, 16, 14, 24, 22, 40, 14, 18, 10, 10, 16, 24, 10, 12, 10, 8, 12,
                  8, 8, 8, 34, 34, 34,
                  16, 16, 14, 14, 22, 22, 26, 16,
@@ -806,7 +861,7 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
 </w:styles>`;
 
   async function toDOCX(ctx) {
-    if (typeof JSZip === "undefined") throw new Error("JSZip 未加载");
+    if (typeof JSZip === "undefined") throw new Error("JSZip is not loaded");
     const zip = new JSZip();
     const media = [], rels = [];
     let pid = 0;
@@ -828,7 +883,7 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
 
     const ev = ctx.event;
     let body = "";
-    body += wPara("Supplier Report", { style: "Title" });
+    body += wPara("Factory Report", { style: "Title" });
     body += wPara(ev.name, { bold: true, size: 13, after: 40 });
     body += wPara([ev.phase, ev.dates, ev.venue].filter(Boolean).join(" · "), { size: 10 });
     body += wPara("Prepared for: " + (ev.prepared_for || "—"), { size: 10 });
@@ -837,25 +892,29 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
     /* 1 —— 只留总数统计
        全篇不再插硬分页（封面也不单独占一页）：让 Word 按内容自然流排，
        短章节不会白留大半页空白。与 Python 端 write_docx 口径保持一致。 */
-    body += wPara("1. Supplier List", { style: "Heading1" });
-    body += wPara(`Suppliers recorded: ${ctx.suppliers.length}`, { bold: true, size: 11, color: BRAND, after: 60 });
-    if (ctx.suppliers.length) body += wTable(LIST_COLS, listRows(ctx), LIST_WIDTHS);
-    else body += wPara("No supplier recorded yet.", { size: 10, italic: true });
+    body += wPara("1. Factory List", { style: "Heading1" });
+    body += wPara(`Factories recorded: ${ctx.suppliers.length}`, { bold: true, size: 11, color: BRAND, after: 60 });
+    if (ctx.suppliers.length) {
+      for (const g of listGroups(ctx)) {
+        body += wPara(`${g.name} — ${factors(g.rows.length)}`, { style: "Heading2" });
+        body += wTable(LIST_COLS, g.rows, LIST_WIDTHS);
+      }
+    } else body += wPara("No factory recorded yet.", { size: 10, italic: true });
 
     /* 2 —— 供应商档案：基础信息 + 评分评语 + 名片 + 亮点产品 + 展位照片
        这里不再插分页：第 1 章往往只有一行统计，硬分一页就白留了大半页空白，
        让 Word 自己顺着排，章节之间靠 Heading 的段前间距分隔。 */
-    body += wPara("2. Supplier Catalogue", { style: "Heading1" });
+    body += wPara("2. Factory Catalogue", { style: "Heading1" });
     const groups = grouped(ctx);
-    if (!groups.length) body += wPara("No supplier recorded yet.", { size: 10, italic: true });
+    if (!groups.length) body += wPara("No factory recorded yet.", { size: 10, italic: true });
     for (const [, name, items] of groups) {
-      body += wPara(`${name} — ${items.length} supplier(s)`, { style: "Heading2" });
+      body += wPara(`${name} — ${factors(items.length)}`, { style: "Heading2" });
       for (const s of items) {
         const b = photoBuckets(ctx, s);
         const notes = s.scoreNotes || {}, sc = s.score || {};
         body += wPara(s._company + (s._score != null ? `  ·  ${s._score}/100 (${s._tier})` : `  ·  ${s._tier}`),
           { style: "Heading3" });
-        const contact = [s.contactName, s.contactTitle].filter(Boolean).join(" / ") || "—";
+        const contact = [s.contactName, valEn(s.contactTitle)].filter(Boolean).join(" / ") || "—";
         const ways = [s.phone, s.wechat, s.email].filter(Boolean).join(" · ");
         body += wTable(["Field", "Value"], [
           ["Booth", boothText(s)],
@@ -866,6 +925,7 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
           ["Export markets", marketsEn(s).join(", ") || "—"],
           ["EU / DE experience", s.euGermanyExperience || "Unknown"],
           ["Source", sourceEn(s)],
+          ["Note / intention", s.intent || "—"],
           ["Notes", s.notes || "—"],
           ["Next action", s.nextAction
             ? s.nextAction + (s.nextActionDate ? " · due " + s.nextActionDate : "") : "—"],
@@ -978,7 +1038,7 @@ ${rels.map((r) => `<Relationship Id="${r.id}" Type="${r.type}" Target="${r.targe
   }
   function fileName(ctx, ext) {
     const base = U().slugify(ctx.event.name || "fair") || "fair";
-    return `Supplier_Report_${base}-${stamp()}.${ext}`;
+    return `Factory_Report_${base}-${stamp()}.${ext}`;
   }
   async function share(blob, name, mime) {
     const file = new File([blob], name, { type: mime || blob.type || "application/octet-stream" });

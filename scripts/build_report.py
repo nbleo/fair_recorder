@@ -68,14 +68,14 @@ def _photo_pick(ctx: F.Context, sid: str, n: int = 2) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# Supplier_Master.xlsx
+# Factory_Master.xlsx
 # --------------------------------------------------------------------------- #
 def write_master_xlsx(ctx: F.Context, path: Path) -> None:
     wb = Workbook()
 
-    # --- Suppliers -------------------------------------------------------- #
+    # --- Factories -------------------------------------------------------- #
     ws = wb.active
-    ws.title = "Suppliers"
+    ws.title = "Factories"
     cols = ([
         ("Company (EN / ZH)", 34), ("Company ZH", 26), ("Booth", 14), ("Hall / Area", 16),
         ("Source", 12), ("Contact", 14), ("Title", 14), ("Phone", 16), ("WeChat", 16),
@@ -87,7 +87,7 @@ def write_master_xlsx(ctx: F.Context, path: Path) -> None:
       + [(f"{d[2]} comments", 34) for d in F.SCORE_DIMS] \
       + [(f"Card {en}", 16) for _c, en in F.NAMECARD_FIELDS] \
       + [("Highlight products", 40), ("State", 10), ("Missing", 24), ("Follow-up", 13),
-         ("Next action", 26), ("Due", 12), ("Notes", 40), ("Photos", 8), ("Last updated", 19)])
+         ("Next action", 26), ("Due", 12), ("Note / intention", 34), ("Notes", 40), ("Photos", 8), ("Last updated", 19)])
     ws.append([c[0] for c in cols])
     for s in ctx.suppliers:
         sc = s.get("score") or {}
@@ -96,9 +96,9 @@ def write_master_xlsx(ctx: F.Context, path: Path) -> None:
         hl = " | ".join(" — ".join(x for x in (it["title"] or "", it["note"]) if x)
                         for it in F.highlights(s))
         row = [s["_company"], s.get("companyNameZh", ""), s.get("boothNo", ""),
-               " / ".join(x for x in (s.get("hall"), s.get("area")) if x),
+               " / ".join(x for x in (value_en(s.get("hall")), value_en(s.get("area"))) if x),
                F.source_en(s),
-               s.get("contactName", ""), s.get("contactTitle", ""), s.get("phone", ""),
+               s.get("contactName", ""), value_en(s.get("contactTitle")), s.get("phone", ""),
                s.get("wechat", ""), s.get("email", ""), s.get("website", ""),
                ", ".join(F.categories_en(s)), s.get("productDetails", ""), s.get("models", ""),
                F.moq_text(s), F.price_text(s), s.get("incoterm", ""), s.get("leadTimeDays"),
@@ -109,7 +109,7 @@ def write_master_xlsx(ctx: F.Context, path: Path) -> None:
         row += [str(card.get(c) or "") for c, _en in F.NAMECARD_FIELDS]
         row += [hl, s["_state"], ", ".join(s["_missing"]),
                 F.followup_en(s), s.get("nextAction", ""), s.get("nextActionDate", ""),
-                s.get("notes", ""), s["_photoCount"], s.get("updatedAt", "")]
+                s.get("intent", ""), s.get("notes", ""), s["_photoCount"], s.get("updatedAt", "")]
         ws.append(row)
     _style_header(ws, [c[1] for c in cols], "C2")
     for r in range(2, ws.max_row + 1):
@@ -203,7 +203,7 @@ def write_comparison_xlsx(ctx: F.Context, path: Path) -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "Overview"
-    ws.append(["Category", "Suppliers", "Rated", "Avg score", "Top supplier", "Top score", "Price comparability"])
+    ws.append(["Category", "Factories", "Rated", "Avg score", "Top factory", "Top score", "Price comparability"])
     for code, name, items in F.grouped_by_category(ctx):
         rated = [s for s in items if s["_rankable"]]
         avg = round(sum(s["_score"] for s in rated) / len(rated), 1) if rated else ""
@@ -255,9 +255,13 @@ h3{font-size:17px;margin:22px 0 8px}
 .sub{color:var(--mut);font-size:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
 table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
-/* 第 1 章的清单表有 6 列，手机窄屏挤成一团，包一层横向滚动 */
+/* Chapter 1 table has 6 columns — wrap it so narrow phones scroll sideways instead of squashing */
 .scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table.list{min-width:660px}
+table.list{min-width:660px;table-layout:auto}
+/* keep the rating cell on one line — "Low priority" / "Not ranked" must not wrap */
+table.list td:last-child,table.list th:last-child{white-space:nowrap}
+/* Chapter 1: per-category group heading */
+.grph{font-size:15px;font-weight:700;color:var(--acc);margin:16px 0 8px}
 th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
 th{background:var(--acc);color:#fff;font-weight:600}
 tbody tr:nth-child(even) td{background:var(--soft2)}
@@ -272,7 +276,7 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
 .b-draft{background:#FDECEC;color:#B3261E}
 .warn{background:#FFF7E6;border:1px solid #F2D194;color:#8A5300;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:14px}
 .mut{color:var(--mut)}.small{font-size:13px}
-/* 名片 / 亮点产品：与基础信息用虚线隔开，否则一堆 kv 行糊成一片 */
+/* Name card / highlight products: dashed divider, otherwise every kv row blurs together */
 .blk{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
 .blkt{font-size:13px;font-weight:700;color:var(--acc);letter-spacing:.3px;margin-bottom:8px}
 .hl{border-left:3px solid var(--acc);padding:2px 0 8px 12px;margin:12px 0}
@@ -362,7 +366,7 @@ def supplier_card_html(ctx: F.Context, s: dict) -> str:
              f"<span class='badge {cls}'>{F.e(s['_tier'])}"
              f"{(' · ' + str(s['_score'])) if s['_score'] is not None else ''}</span>"
              f"<span class='badge b-follow'>{F.e(F.source_en(s))}</span></div>")
-    h.append(f"<div class='kv'><span class='k'>Booth</span><span>{F.e(' / '.join(x for x in (s.get('hall'), s.get('area'), s.get('boothNo')) if x)) or '—'}</span></div>")
+    h.append(f"<div class='kv'><span class='k'>Booth</span><span>{F.e(' / '.join(x for x in (value_en(s.get('hall')), value_en(s.get('area')), s.get('boothNo')) if x)) or '—'}</span></div>")
     contact = F.e(" / ".join(x for x in (s.get("contactName"), s.get("contactTitle")) if x)) or "—"
     ways = " · ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x)
     h.append(f"<div class='kv'><span class='k'>Contact</span><span>{contact}"
@@ -371,6 +375,9 @@ def supplier_card_html(ctx: F.Context, s: dict) -> str:
     h.append(f"<div class='kv'><span class='k'>Capacity / Markets</span><span>"
              f"{F.e(F.capacity_text(s))} · {F.e(', '.join(F.markets_en(s)) or '—')} · "
              f"EU/DE experience: {F.e(s.get('euGermanyExperience') or 'Unknown')}</span></div>")
+    # v2.0：意向（这次谈到什么程度）与现场备注分两行输出，互不覆盖
+    if s.get("intent"):
+        h.append(f"<div class='kv'><span class='k'>Note / intention</span><span>{F.e(s['intent'])}</span></div>")
     if s.get("notes"):
         h.append(f"<div class='kv'><span class='k'>Notes</span><span>{F.e(s['notes'])}</span></div>")
     if s.get("nextAction"):
@@ -429,30 +436,59 @@ def supplier_card_html(ctx: F.Context, s: dict) -> str:
     return "".join(h)
 
 
-# ---- 第 1 章 Supplier List ------------------------------------------------ #
-# 以前这一章只有一行「Suppliers recorded: N」，不翻到第 2 章根本不知道见了谁。
-# 现在每家列一行：公司名、展位、品类、联系人、评级（顺序与 Catalogue 一致，高分在前）。
+# ---- 第 1 章 Factory List ------------------------------------------------- #
+# 以前这一章只有一行统计，不翻到第 2 章根本不知道见了谁。现在按 Categories 分组，
+# 每组一张明细表，组内高分在前，和第 2 章 Catalogue 的品类顺序完全一致。
 LIST_COLS = ["#", "Company", "Booth / Hall", "Categories", "Contact", "Rating"]
 LIST_WIDTHS_CM = [0.9, 4.3, 2.1, 2.8, 3.6, 3.3]        # 合计 17.0 cm = A4 版心
 
+# 旧记录里 hall / area / title / market 存过中文值，输出前统一换成英文，
+# 否则分享出去的报告会一半中文。只在读取时换算，不批量改库。
+LEGACY_EN = {
+    "A区": "Hall A", "B区": "Hall B", "C区": "Hall C", "D区": "Hall D", "未定": "TBD",
+    "卫浴设备": "Bathroom Equipment", "建筑装饰材料": "Building Materials",
+    "家居用品": "Household Goods", "玻璃工艺品": "Glass & Crafts", "餐厨用具": "Kitchenware",
+    "家具": "Furniture", "进口展": "International Pavilion", "其他": "Other",
+    "Sales 销售": "Sales", "Manager 经理": "Manager", "Owner 负责人": "Owner",
+    "Engineer 工程师": "Engineer", "Director 总监": "Director",
+}
+
+
+def value_en(v) -> str:
+    t = str(v or "").strip()
+    return LEGACY_EN.get(t, t)
+
+
+def factors(n: int) -> str:
+    return "1 factory" if n == 1 else f"{n} factories"
+
+
+def list_row(s: dict, i: int) -> list[str]:
+    """一行一条记录；单元格内的换行由 HTML 转 <br>、由 python-docx 转软换行。"""
+    who = " / ".join(x for x in (s.get("contactName"), value_en(s.get("contactTitle"))) if x)
+    ways = " · ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x)
+    contact = "\n".join(x for x in (who, ways) if x) or "—"
+    # 90.0 这种尾巴看着像精度缺失，能取整就取整
+    sc = s["_score"] if s["_rankable"] and s["_score"] is not None else None
+    sc_txt = "—" if sc is None else f"{sc:.0f}" if float(sc).is_integer() else f"{sc:.1f}"
+    rating = "\n".join(x for x in (sc_txt, s["_tier"] or "") if x) or "—"
+    booth = " / ".join(x for x in (value_en(s.get("hall")), value_en(s.get("area")),
+                                   s.get("boothNo")) if x) or "—"
+    return [str(i), s["_company"], booth, ", ".join(F.categories_en(s)) or "—", contact, rating]
+
+
+def list_groups(ctx: F.Context) -> list[tuple[str, list[list[str]]]]:
+    """[(品类名, 行数据)]。品类顺序与组内顺序都沿用 grouped_by_category（多的在前、
+    可评分在前、同分按公司名），这样手机端与电脑端出来的表完全同序。"""
+    out = []
+    for _code, name, items in F.grouped_by_category(ctx):
+        out.append((name, [list_row(s, i + 1) for i, s in enumerate(items)]))
+    return out
+
 
 def list_rows(ctx: F.Context) -> list[list[str]]:
-    """每行一条记录；单元格内的换行由 HTML 转 <br>、由 python-docx 转软换行。"""
-    rows = []
-    for i, s in enumerate(ctx.suppliers, 1):
-        who = " / ".join(x for x in (s.get("contactName"), s.get("contactTitle")) if x)
-        ways = " · ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x)
-        contact = "\n".join(x for x in (who, ways) if x) or "—"
-        # 90.0 这种尾巴看着像精度缺失，能取整就取整
-        sc = s["_score"] if s["_rankable"] and s["_score"] is not None else None
-        sc_txt = "—" if sc is None else f"{sc:.0f}" if float(sc).is_integer() else f"{sc:.1f}"
-        rating = "\n".join(x for x in (sc_txt, s["_tier"] or "") if x) or "—"
-        rows.append([
-            str(i), s["_company"],
-            " / ".join(x for x in (s.get("hall"), s.get("area"), s.get("boothNo")) if x) or "—",
-            ", ".join(F.categories_en(s)) or "—", contact, rating,
-        ])
-    return rows
+    """拍平版（Excel 等按行消费的地方用）。"""
+    return [list_row(s, i + 1) for i, s in enumerate(ctx.suppliers)]
 
 
 def write_html(ctx: F.Context, path: Path) -> None:
@@ -460,33 +496,35 @@ def write_html(ctx: F.Context, path: Path) -> None:
     total = len(ctx.suppliers)
 
     h = [f"<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>",
-         f"<title>Supplier Report — {F.e(ev['name'])}</title><style>{CSS}</style></head><body><div class='wrap'>"]
+         f"<title>Factory Report — {F.e(ev['name'])}</title><style>{CSS}</style></head><body><div class='wrap'>"]
 
-    h.append(f"<h1>Supplier Report — {F.e(ev['name'])}</h1>")
+    h.append(f"<h1>Factory Report — {F.e(ev['name'])}</h1>")
     h.append(f"<div class='sub'>{F.e(ev['phase'])} · {F.e(ev['dates'])} · {F.e(ev['venue'])}</div>")
     h.append(f"<div class='sub' style='margin-top:8px'>Prepared for: {F.e(ev['prepared_for'])} · "
              f"Generated {F.e(ctx.generated_at)}</div>")
 
-    # 1. Supplier List —— 总数 + 每家一行关键信息
-    h.append("<h2>1. Supplier List</h2><div class='card'>")
-    h.append(f"<div class='kv'><span class='k'>Suppliers recorded</span><span>{total}</span></div>")
+    # 1. Factory List —— 总数 + 按品类分组的明细表
+    h.append("<h2>1. Factory List</h2><div class='card'>")
+    h.append(f"<div class='kv'><span class='k'>Factories recorded</span><span>{total}</span></div>")
     if total:
-        h.append("<div class='scrollx'><table class='list'><tr>"
-                 + "".join(f"<th>{F.e(c)}</th>" for c in LIST_COLS) + "</tr>")
-        for row in list_rows(ctx):
-            cells = "".join(f"<td>{F.e(v).replace(chr(10), '<br>')}</td>" for v in row)
-            h.append(f"<tr>{cells}</tr>")
-        h.append("</table></div>")
+        for gname, grows in list_groups(ctx):
+            h.append(f"<div class='grph'>{F.e(gname)} — {F.e(factors(len(grows)))}</div>")
+            h.append("<div class='scrollx'><table class='list'><tr>"
+                     + "".join(f"<th>{F.e(c)}</th>" for c in LIST_COLS) + "</tr>")
+            for row in grows:
+                cells = "".join(f"<td>{F.e(v).replace(chr(10), '<br>')}</td>" for v in row)
+                h.append(f"<tr>{cells}</tr>")
+            h.append("</table></div>")
     else:
-        h.append("<p class='small mut'>No supplier recorded yet.</p>")
+        h.append("<p class='small mut'>No factory recorded yet.</p>")
     h.append("</div>")
 
-    # 2. Supplier Catalogue
-    h.append("<h2>2. Supplier Catalogue</h2>")
+    # 2. Factory Catalogue
+    h.append("<h2>2. Factory Catalogue</h2>")
     if not ctx.suppliers:
-        h.append("<p class='small mut'>No supplier recorded yet.</p>")
+        h.append("<p class='small mut'>No factory recorded yet.</p>")
     for _code, name, items in F.grouped_by_category(ctx):
-        h.append(f"<h3>{F.e(name)} — {len(items)} supplier(s)</h3>")
+        h.append(f"<h3>{F.e(name)} — {F.e(factors(len(items)))}</h3>")
         for s in items:
             h.append(supplier_card_html(ctx, s))
 
@@ -641,7 +679,7 @@ def write_docx(ctx: F.Context, path: Path) -> None:
                     pp.paragraph_format.line_spacing = 1.0
 
     # ---- Cover ----
-    t = doc.add_heading("Supplier Report", level=0)
+    t = doc.add_heading("Factory Report", level=0)
     t.alignment = WD_ALIGN_PARAGRAPH.LEFT
     para(ev["name"], size=14, bold=True)
     para(f"{ev['phase']} · {ev['dates']}", size=11)
@@ -650,32 +688,35 @@ def write_docx(ctx: F.Context, path: Path) -> None:
     para(f"Generated: {ctx.generated_at}", size=9, italic=True)
     doc.add_paragraph()
 
-    # ---- 1. Supplier List ----
+    # ---- 1. Factory List ----
     # 不插分页：这一章通常只有一行统计，硬分一页等于白留大半页空白。
-    h1("1. Supplier List")
-    para(f"Suppliers recorded: {len(ctx.suppliers)}", size=11, bold=True)
+    h1("1. Factory List")
+    para(f"Factories recorded: {len(ctx.suppliers)}", size=11, bold=True)
     if ctx.suppliers:
-        table(LIST_COLS, [list(r) for r in list_rows(ctx)], widths=LIST_WIDTHS_CM)
+        for gname, grows in list_groups(ctx):
+            h2(f"{gname} — {factors(len(grows))}")
+            table(LIST_COLS, [list(r) for r in grows], widths=LIST_WIDTHS_CM)
     else:
-        para("No supplier recorded yet.", size=10, italic=True)
+        para("No factory recorded yet.", size=10, italic=True)
 
-    # ---- 2. Supplier Catalogue ----
-    h1("2. Supplier Catalogue")
+    # ---- 2. Factory Catalogue ----
+    h1("2. Factory Catalogue")
     if not ctx.suppliers:
-        para("No supplier recorded yet.", size=10, italic=True)
+        para("No factory recorded yet.", size=10, italic=True)
     for _code, name, items in F.grouped_by_category(ctx):
-        h2(f"{name} — {len(items)} supplier(s)")
+        h2(f"{name} — {factors(len(items))}")
         for s in items:
             cards, by_hl, gallery = F.photo_buckets(ctx, s["id"])
             notes = F.score_comments(s)
             sc = s.get("score") or {}
             doc.add_heading(f"{s['_company']}  ·  {s['_tier']}"
-                            + (f" ({s['_score']}/100)" if s["_rankable"] else " — draft, not ranked"),
+                            + (f" ({s['_score']}/100)" if s["_rankable"]
+                               else " — draft (" + ", ".join(s["_missing"]) + " missing)"),
                             level=3)
-            contact = " / ".join(x for x in (s.get("contactName"), s.get("contactTitle")) if x) or "—"
+            contact = " / ".join(x for x in (s.get("contactName"), value_en(s.get("contactTitle"))) if x) or "—"
             ways = " / ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x) or "—"
             table(["Field", "Value"], [
-                ["Booth", " / ".join(x for x in (s.get("hall"), s.get("area"), s.get("boothNo")) if x) or "—"],
+                ["Booth", " / ".join(x for x in (value_en(s.get("hall")), value_en(s.get("area")), s.get("boothNo")) if x) or "—"],
                 ["Contact", contact],
                 ["Channels", ways],
                 ["Categories", ", ".join(F.categories_en(s)) or "—"],
@@ -684,6 +725,7 @@ def write_docx(ctx: F.Context, path: Path) -> None:
                 ["Export markets", ", ".join(F.markets_en(s)) or "—"],
                 ["EU / DE experience", s.get("euGermanyExperience") or "Unknown"],
                 ["Source", F.source_en(s)],
+                ["Note / intention", s.get("intent") or "—"],
                 ["Notes", s.get("notes") or "—"],
                 ["Next action", (s.get("nextAction") or "—")
                  + (f" (due {s.get('nextActionDate')})" if s.get("nextActionDate") else "")],
@@ -744,7 +786,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="FairRecorder — merge phone exports into HQ deliverables")
     ap.add_argument("--inbox", default=str(root / "inbox"), help="folder holding exported ZIP files")
     ap.add_argument("--output", default=str(root / "output"), help="output folder")
-    ap.add_argument("--top", type=int, default=5, help="how many suppliers to feature as recommendations")
+    ap.add_argument("--top", type=int, default=5, help="how many factories to feature as recommendations")
     ap.add_argument("--config", default=str(root / "config.json"),
                     help="optional local config.json (event title, recipient) — never committed")
     ap.add_argument("--fair", default=None,
@@ -773,7 +815,7 @@ def main(argv=None) -> int:
         for c in ctxs:
             f = c.fair or {}
             print(f"  {c.fair_dir:<44} id={c.fair_id}  "
-                  f"{len(c.suppliers)} suppliers  {f.get('name') or f.get('nameEn') or ''}")
+                  f"{len(c.suppliers)} factories  {f.get('name') or f.get('nameEn') or ''}")
         return 0
 
     contexts, global_issues = F.build_all_contexts(
@@ -782,10 +824,10 @@ def main(argv=None) -> int:
     index: list[dict] = []
     for ctx in contexts:
         sub = out / ctx.fair_dir
-        master = sub / "Supplier_Master.xlsx"
+        master = sub / "Factory_Master.xlsx"
         comp = sub / "Category_Comparison.xlsx"
-        html_path = sub / "Supplier_Report_EN.html"
-        docx_path = sub / "Supplier_Report_EN.docx"
+        html_path = sub / "Factory_Report_EN.html"
+        docx_path = sub / "Factory_Report_EN.docx"
 
         write_master_xlsx(ctx, master)
         write_comparison_xlsx(ctx, comp)
@@ -833,7 +875,7 @@ def main(argv=None) -> int:
             "photos": len(ctx.photo_index),
             "top": [{"company": s["_company"], "score": s["_score"], "tier": s["_tier"]}
                     for s in picks],
-            "report": f"{ctx.fair_dir}/Supplier_Report_EN.docx",
+            "report": f"{ctx.fair_dir}/Factory_Report_EN.docx",
         })
 
         print(f"[{ctx.fair_dir}]")
@@ -856,7 +898,7 @@ def main(argv=None) -> int:
     print()
     print(f"Fairs     : {len(contexts)}")
     for row in index:
-        print(f"   {row['dir']:<44} {row['suppliers']} suppliers → {row['report']}")
+        print(f"   {row['dir']:<44} {row['suppliers']} factories → {row['report']}")
     print(f"Index     : {out / 'index.json'}")
     return 0
 

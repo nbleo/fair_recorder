@@ -54,8 +54,8 @@ const check = (c, m) => (c ? ok(m) : bad(m));
   check(!/商务条件/.test(form), "录入页已无「商务条件」板块");
   check(!/合规资质/.test(form), "录入页已无「合规资质」板块");
   check(!/MOQ/.test(form), "录入页已无 MOQ 字段");
-  check(/智能马桶/.test(form), "录入页品类里能选到「智能马桶」");
-  check(/评分/.test(form), "评分区仍在（六项主观评分）");
+  check(/Smart Toilet/.test(form), "录入页品类里能选到「Smart Toilet」");
+  check(/Scoring \(1–5 stars/.test(form), "评分区仍在（三项主观评分）");
 
   // ---------- 2) 照片不限张数（报告口径） ----------
   const photoN = await page.evaluate(async () => {

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<title>FairRecorder 展会速记</title>
+<title>FairRecorder — Trade Fair Notes</title>
 <style>
 /* Schulte 品牌色：深蓝 #1F1FAF 主色 · 纯白辅色 · 浅蓝/浅灰做底纹与隔行 */
 :root{
@@ -246,10 +246,10 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 
 <header class="top" id="topbar">
   <div class="top-row">
-    <button class="back hide" id="btnBack" aria-label="返回">‹</button>
+    <button class="back hide" id="btnBack" aria-label="Back">‹</button>
     <div style="flex:1;min-width:0">
       <h1 id="topTitle">FairRecorder</h1>
-      <div class="sub" id="topSub">第140届广交会 · 第二期</div>
+      <div class="sub" id="topSub">140th Canton Fair · Phase II</div>
     </div>
   </div>
 </header>
@@ -259,48 +259,49 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 <!-- ============ FAIRS（展会列表 / 切换） ============ -->
 <section id="scr-fairs" class="hide">
   <div class="banner banner-info">
-    <div>每届展会是<b>独立的数据空间</b>：记录、照片、云备份路径、生成的报告全部隔离，
-      互不干扰。观展前先在这里选中当届展会。</div>
+    <div>Each fair is an <b>isolated data space</b>: records, photos, cloud backup paths and
+      generated reports are all kept apart. Pick the current fair here before you start.</div>
   </div>
-  <button class="btn btn-accent" id="btnFairNew" style="margin-bottom:14px">＋ 新建展会</button>
+  <button class="btn btn-accent" id="btnFairNew" style="margin-bottom:14px">＋ New fair</button>
   <div id="fairBody"></div>
 </section>
 
 <!-- ============ 新建 / 编辑展会 ============ -->
 <section id="scr-fairNew" class="hide">
-  <div class="field"><label>展会类型（只预填城市与展区，可改）</label>
+  <div class="field"><label>Fair type (prefills city and area, editable)</label>
     <select id="fPreset"></select>
   </div>
-  <div class="field"><label class="req">展会名称（中文）</label>
-    <input id="fName" type="text" placeholder="例如 第140届广交会 第二期"></div>
-  <div class="field"><label>展会名称（English，报告抬头用）</label>
-    <input id="fNameEn" type="text" placeholder="例如 140th Canton Fair — Phase II" autocapitalize="off"></div>
-  <div class="field"><label>届次 / 阶段</label>
-    <input id="fPhase" type="text" placeholder="例如 Phase II · Bathroom Equipment"></div>
+  <div class="field"><label class="req">Fair name (local language)</label>
+    <input id="fName" type="text" placeholder="e.g. 140th Canton Fair, Phase II"></div>
+  <div class="field"><label>Fair name (English, used in the report header)</label>
+    <input id="fNameEn" type="text" placeholder="e.g. 140th Canton Fair — Phase II" autocapitalize="off"></div>
+  <div class="field"><label>Phase / Stage</label>
+    <input id="fPhase" type="text" placeholder="e.g. Phase II · Bathroom Equipment"></div>
   <div class="btn-row">
-    <div class="field" style="flex:1"><label>开始日期</label><input id="fStart" type="date"></div>
-    <div class="field" style="flex:1"><label>结束日期</label><input id="fEnd" type="date"></div>
+    <div class="field" style="flex:1"><label>Start date</label><input id="fStart" type="date"></div>
+    <div class="field" style="flex:1"><label>End date</label><input id="fEnd" type="date"></div>
   </div>
   <div class="btn-row">
-    <div class="field" style="flex:1"><label>城市</label><input id="fCity" type="text"></div>
-    <div class="field" style="flex:1"><label>场馆</label><input id="fVenue" type="text"></div>
+    <div class="field" style="flex:1"><label>City</label><input id="fCity" type="text"></div>
+    <div class="field" style="flex:1"><label>Venue</label><input id="fVenue" type="text"></div>
   </div>
-  <div class="field"><label>主要展区</label><input id="fArea" type="text" placeholder="例如 卫浴设备 / 建筑装饰材料"></div>
-  <div class="field"><label>默认展馆</label><select id="fHall"></select></div>
-  <div class="field"><label>备注</label><textarea id="fNote" placeholder="例如 重点看淋浴房整体与钢化玻璃"></textarea></div>
-  <div class="field"><label>观展总结（多段文本，会原样排进英文报告的最后一项）</label>
-    <textarea id="fSummary" style="min-height:200px" placeholder="例如：本次共走访 32 家，整体感受到三个趋势……&#10;&#10;淋浴房整体：型材壁厚普遍做到 1.2–1.5mm，玻璃基本标配 6mm 钢化……&#10;&#10;待跟进：A 公司可做 1.0mm 超窄边框，但需要确认 KTW 证书范围……"></textarea>
-    <div class="tiny muted" style="margin-top:6px">空行分段。中英文混写也可以，报告里按段落照原样输出。</div></div>
+  <div class="field"><label>Main area</label><input id="fArea" type="text" placeholder="e.g. Bathroom Equipment / Building Materials"></div>
+  <div class="field"><label>Default hall</label><select id="fHall"></select></div>
+  <div class="field"><label>Notes</label><textarea id="fNote" placeholder="e.g. Focus on shower enclosures and tempered glass"></textarea></div>
+  <div class="field"><label>Fair summary (multi-paragraph, printed as the last chapter of the report)</label>
+    <textarea id="fSummary" style="min-height:200px" placeholder="e.g. Visited 32 factories in total, three trends stood out...&#10;&#10;Shower enclosures: profile wall thickness is now 1.2-1.5mm and 6mm tempered glass is standard...&#10;&#10;To follow up: Company A can do a 1.0mm ultra-slim frame, but the KTW certificate scope must be confirmed..."></textarea>
+    <div class="tiny muted" style="margin-top:6px">Blank lines separate paragraphs. Mixed languages are fine; paragraphs print as typed.</div></div>
   <div class="btn-row" style="margin-top:14px">
-    <button class="btn" id="fCancel">取消</button>
-    <button class="btn btn-accent" id="fSave">保存并使用</button>
+    <button class="btn" id="fCancel">Cancel</button>
+    <button class="btn btn-accent" id="fSave">Save &amp; use</button>
   </div>
   <div id="fAdvanced" class="hide" style="margin-top:18px">
-    <div class="sec">危险操作</div>
-    <button class="btn btn-danger" id="fArchive" style="margin-bottom:10px">归档此展会（不再显示在主列表）</button>
-    <button class="btn btn-danger" id="fDelete">🗑 彻底删除此展会（本机 + 其他设备）</button>
-    <div class="tiny muted" style="margin-top:8px">删除需要三重确认（含手输展会名），并会向云端写入墓碑；
-      其他设备下次同步后，这个展会连同它的记录也会一起删掉。删除前建议先导出一份 ZIP。</div>
+    <div class="sec">Danger zone</div>
+    <button class="btn btn-danger" id="fArchive" style="margin-bottom:10px">Archive this fair (hidden from the main list)</button>
+    <button class="btn btn-danger" id="fDelete">🗑 Delete this fair (this device + all others)</button>
+    <div class="tiny muted" style="margin-top:8px">Deleting asks for three confirmations (including typing the
+      fair name) and writes a tombstone to the cloud; the fair and its records disappear from every device on
+      the next sync. Export a ZIP first.</div>
   </div>
 </section>
 
@@ -309,41 +310,41 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
   <div id="homeFair"></div>
   <div id="homeBanners"></div>
   <div class="stats">
-    <div class="stat"><b id="stTotal">0</b><span>厂家</span></div>
-    <div class="stat"><b id="stDraft">0</b><span>待补</span></div>
-    <div class="stat"><b id="stRated">0</b><span>已评分</span></div>
-    <div class="stat"><b id="stPhotos">0</b><span>照片</span></div>
+    <div class="stat"><b id="stTotal">0</b><span>Factories</span></div>
+    <div class="stat"><b id="stDraft">0</b><span>Drafts</span></div>
+    <div class="stat"><b id="stRated">0</b><span>Rated</span></div>
+    <div class="stat"><b id="stPhotos">0</b><span>Photos</span></div>
   </div>
 
   <div style="margin:16px 0 10px">
-    <button class="btn btn-primary" id="btnQuick">📷　拍照秒存 · 新建厂家</button>
+    <button class="btn btn-primary" id="btnQuick">📷　Snap &amp; save · New factory</button>
     <div class="tiny muted" style="margin-top:8px;text-align:center">
-      现场先拍展位牌或名片，立刻存成草稿；资料留到间隙或晚上补
+      Shoot the booth sign or a name card first to save a draft; fill in the rest later
     </div>
   </div>
 
   <div style="margin-bottom:12px">
-    <button class="btn btn-accent" id="btnManual">✍️　手动输入厂家（先不拍照）</button>
+    <button class="btn btn-accent" id="btnManual">✍️　Manual entry (no photo)</button>
     <div class="tiny muted" style="margin-top:6px;text-align:center">
-      只有名片、样品册或观展前预录时用；照片可稍后从相册补
+      For name cards, catalogues or pre-fair entry; photos can be added later
     </div>
   </div>
 
   <div class="btn-row" style="margin-bottom:10px">
-    <button class="btn" id="btnPlans">📋 预拜访清单</button>
-    <button class="btn" id="btnList">📒 全部记录</button>
+    <button class="btn" id="btnPlans">📋 Visit plan</button>
+    <button class="btn" id="btnList">📒 All records</button>
   </div>
   <div class="btn-row" style="margin-bottom:10px">
-    <button class="btn" id="btnExport">💾 导出备份</button>
-    <button class="btn" id="btnSync">☁️ 云同步</button>
+    <button class="btn" id="btnExport">💾 Export backup</button>
+    <button class="btn" id="btnSync">☁️ Cloud sync</button>
   </div>
-  <button class="btn btn-accent" id="btnReport" style="margin-bottom:10px">📄　生成英文报告</button>
-  <button class="btn" id="btnSettings">⚙️ 设置</button>
+  <button class="btn btn-accent" id="btnReport" style="margin-bottom:10px">📄　Generate report</button>
+  <button class="btn" id="btnSettings">⚙️ Settings</button>
 </section>
 
 <!-- ============ LIST ============ -->
 <section id="scr-list" class="hide">
-  <div class="search"><input id="q" type="search" placeholder="搜索公司 / 展位 / 联系人"></div>
+  <div class="search"><input id="q" type="search" placeholder="Search company / booth / contact"></div>
   <div class="filters" id="filters"></div>
   <div id="listBody"></div>
 </section>
@@ -352,33 +353,33 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 <section id="scr-edit" class="hide">
   <div id="editState"></div>
   <div id="editForm"></div>
-  <div class="sec">照片</div>
+  <div class="sec">Photos</div>
   <div class="photos" id="editPhotos"></div>
   <div style="margin:18px 0 10px" class="btn-row">
-    <button class="btn btn-danger" id="btnDelete">🗑 删除</button>
-    <button class="btn btn-accent" id="btnDone">✓ 完成 / 返回列表</button>
+    <button class="btn btn-danger" id="btnDelete">🗑 Delete</button>
+    <button class="btn btn-accent" id="btnDone">✓ Done / Back to list</button>
   </div>
   <div class="btn-row" style="margin-bottom:8px">
-    <button class="btn btn-sm" id="btnNextCam" style="flex:1">📷 拍下一家</button>
-    <button class="btn btn-sm" id="btnNextManual" style="flex:1">＋ 新建下一家</button>
+    <button class="btn btn-sm" id="btnNextCam" style="flex:1">📷 Next factory</button>
+    <button class="btn btn-sm" id="btnNextManual" style="flex:1">＋ New blank record</button>
   </div>
   <div class="tiny muted" style="margin:0 2px 14px">
-    拍下一家＝先保存当前这条，然后直接开相机连着扫；新建下一家＝保存后开一张空白记录手填。
+    Next factory saves this record and opens the camera again; New blank record saves it and opens an empty form.
   </div>
 </section>
 
 <!-- ============ PLANS ============ -->
 <section id="scr-plans" class="hide">
-  <button class="btn btn-accent" id="btnAddPlan" style="margin-bottom:14px">＋ 添加预拜访厂家</button>
+  <button class="btn btn-accent" id="btnAddPlan" style="margin-bottom:14px">＋ Add factory to plan</button>
   <div id="planForm" class="card hide">
-    <div class="field"><label class="req">公司名</label><input id="pfName" type="text"></div>
-    <div class="field"><label>展位号</label><input id="pfBooth" type="text"></div>
-    <div class="field"><label>拜访目的</label><input id="pfGoal" type="text"></div>
-    <div class="field"><label>优先级</label><div class="chips" id="pfPrio"></div></div>
-    <div class="field"><label>备注</label><textarea id="pfNote"></textarea></div>
+    <div class="field"><label class="req">Company name</label><input id="pfName" type="text"></div>
+    <div class="field"><label>Booth</label><input id="pfBooth" type="text"></div>
+    <div class="field"><label>Visit purpose</label><input id="pfGoal" type="text"></div>
+    <div class="field"><label>Priority</label><div class="chips" id="pfPrio"></div></div>
+    <div class="field"><label>Notes</label><textarea id="pfNote"></textarea></div>
     <div class="btn-row">
-      <button class="btn" id="pfCancel">取消</button>
-      <button class="btn btn-accent" id="pfSave">保存</button>
+      <button class="btn" id="pfCancel">Cancel</button>
+      <button class="btn btn-accent" id="pfSave">Save</button>
     </div>
   </div>
   <div id="planBody"></div>
@@ -387,18 +388,18 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 <!-- ============ EXPORT ============ -->
 <section id="scr-export" class="hide">
   <div class="banner banner-warn">
-    <div>⚠️ 手机上只有 IndexedDB 一份数据。iOS 在存储紧张时可能回收网站数据，<b>每晚必须导出一次</b>，并保留两份副本（「文件」App + 微信文件传输助手）。</div>
+    <div>⚠️ On this phone IndexedDB is the only copy. iOS may reclaim site data when storage runs low, so <b>export every evening</b> and keep two copies (Files app + a chat to yourself).</div>
   </div>
   <div class="card">
-    <div class="kv"><span class="k">上次导出</span><span class="v" id="exLast">从未</span></div>
-    <div class="kv"><span class="k">待导出记录</span><span class="v" id="exCount">0</span></div>
-    <div class="kv"><span class="k">占用存储</span><span class="v" id="exQuota">-</span></div>
+    <div class="kv"><span class="k">Last export</span><span class="v" id="exLast">Never</span></div>
+    <div class="kv"><span class="k">Records to export</span><span class="v" id="exCount">0</span></div>
+    <div class="kv"><span class="k">Storage used</span><span class="v" id="exQuota">-</span></div>
     <div class="bar"><i id="exBar" style="width:0%"></i></div>
   </div>
-  <button class="btn btn-primary" id="btnFull" style="margin-bottom:12px">💾 导出完整备份</button>
-  <button class="btn" id="btnToday" style="margin-bottom:12px">📤 导出今日增量</button>
-  <div class="sec">恢复</div>
-  <button class="btn" id="btnImport">📥 导入备份 ZIP（恢复到本机）</button>
+  <button class="btn btn-primary" id="btnFull" style="margin-bottom:12px">💾 Export full backup</button>
+  <button class="btn" id="btnToday" style="margin-bottom:12px">📤 Export today's changes</button>
+  <div class="sec">Restore</div>
+  <button class="btn" id="btnImport">📥 Import backup ZIP (restore to this device)</button>
   <input type="file" id="fileImport" accept=".zip,application/zip" class="hide">
   <div id="exResult" class="card hide"></div>
 </section>
@@ -406,237 +407,246 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 <!-- ============ SYNC（云备份） ============ -->
 <section id="scr-sync" class="hide">
   <div class="banner banner-info">
-    <div>🔒 <b>本地优先</b>：每条记录先写本机 IndexedDB，云端只是备份。
-      不做实时同步——只在您点「立即备份」或<b>定时器到期</b>时上传，展馆弱网也不会拖慢录入。
-      <br>架构与数据布局参考 <b>glink25/Cent</b>：分块增量 + 串行提交 + 仓库私有。</div>
+    <div>🔒 <b>Local first</b>: every record is written to IndexedDB on this device; the cloud is only a
+      backup. There is no live sync — uploads happen when you tap Backup now or when the <b>timer fires</b>,
+      so a weak signal at the venue never slows down data entry.<br>Layout inspired by <b>glink25/Cent</b>:
+      chunked deltas, serial commits, private repository.</div>
   </div>
 
   <div class="card">
-    <div class="kv"><span class="k">本展会</span><span class="v" id="syFair">-</span></div>
-    <div class="kv"><span class="k">访问者身份</span><span class="v" id="syWho">未确定</span></div>
-    <div class="kv"><span class="k">云端命名空间</span><span class="v" id="sySpace">-</span></div>
-    <div class="kv"><span class="k">仓库可见性</span><span class="v" id="syVis">未配置</span></div>
-    <div class="kv"><span class="k">可访问人员</span><span class="v" id="syCollab">-</span></div>
-    <div class="kv"><span class="k">本地记录 / 照片</span><span class="v" id="syLocal">-</span></div>
-    <div class="kv"><span class="k">未上传改动</span><span class="v" id="syPending">-</span></div>
-    <div class="kv"><span class="k">上次备份</span><span class="v" id="syLast">从未</span></div>
-    <div class="kv"><span class="k">云端本展会</span><span class="v" id="syRemote">-</span></div>
+    <div class="kv"><span class="k">This fair</span><span class="v" id="syFair">-</span></div>
+    <div class="kv"><span class="k">Visitor identity</span><span class="v" id="syWho">Unknown</span></div>
+    <div class="kv"><span class="k">Cloud namespace</span><span class="v" id="sySpace">-</span></div>
+    <div class="kv"><span class="k">Repo visibility</span><span class="v" id="syVis">Not configured</span></div>
+    <div class="kv"><span class="k">People with access</span><span class="v" id="syCollab">-</span></div>
+    <div class="kv"><span class="k">Local records / photos</span><span class="v" id="syLocal">-</span></div>
+    <div class="kv"><span class="k">Unsynced changes</span><span class="v" id="syPending">-</span></div>
+    <div class="kv"><span class="k">Last backup</span><span class="v" id="syLast">Never</span></div>
+    <div class="kv"><span class="k">This fair in cloud</span><span class="v" id="syRemote">-</span></div>
   </div>
 
-  <div class="sec">备份策略</div>
+  <div class="sec">Backup policy</div>
   <div class="card">
-    <div class="field"><label>自动备份（仅在 App 打开时生效，需联网）</label>
+    <div class="field"><label>Auto backup (runs only while the app is open, needs a connection)</label>
       <div class="chips" id="syAuto">
-        <button class="chip" data-v="off" aria-pressed="true">关闭</button>
-        <button class="chip" data-v="m30" aria-pressed="false">每 30 分钟</button>
-        <button class="chip" data-v="h2" aria-pressed="false">每 2 小时</button>
-        <button class="chip" data-v="daily" aria-pressed="false">每天</button>
+        <button class="chip" data-v="off" aria-pressed="true">Off</button>
+        <button class="chip" data-v="m30" aria-pressed="false">Every 30 min</button>
+        <button class="chip" data-v="h2" aria-pressed="false">Every 2 hours</button>
+        <button class="chip" data-v="daily" aria-pressed="false">Daily</button>
       </div>
-      <div class="tiny muted" style="margin-top:6px">自动备份默认只传元数据（几十 KB）；照片建议回酒店有 Wi-Fi 时手动全量备份。</div>
+      <div class="tiny muted" style="margin-top:6px">Auto backup sends metadata only (a few dozen KB); run a full backup with photos once you have Wi-Fi.</div>
     </div>
-    <div class="field"><label>自动备份内容</label>
+    <div class="field"><label>Auto backup content</label>
       <div class="chips" id="syAutoScope">
-        <button class="chip" data-v="meta" aria-pressed="true">仅元数据</button>
-        <button class="chip" data-v="full" aria-pressed="false">元数据 + 原图</button>
+        <button class="chip" data-v="meta" aria-pressed="true">Metadata only</button>
+        <button class="chip" data-v="full" aria-pressed="false">Metadata + originals</button>
       </div>
     </div>
-    <div class="field"><label>手动备份内容</label>
+    <div class="field"><label>Manual backup content</label>
       <div class="chips" id="syScope">
-        <button class="chip" data-v="meta" aria-pressed="true">仅元数据（快）</button>
-        <button class="chip" data-v="full" aria-pressed="false">元数据 + 原图</button>
+        <button class="chip" data-v="meta" aria-pressed="true">Metadata only (fast)</button>
+        <button class="chip" data-v="full" aria-pressed="false">Metadata + originals</button>
       </div>
     </div>
   </div>
 
-  <div class="sec">同步动作</div>
-  <button class="btn btn-primary" id="sySync" style="margin-bottom:12px">🔄 双向同步（先把云端新的拉下来，再推本机改动）</button>
-  <button class="btn" id="syPush" style="margin-bottom:12px">⬆️ 立即备份（只推本机改动）</button>
-  <button class="btn" id="syPushFull" style="margin-bottom:12px">🖼️ 立即全量备份（含原图）</button>
-  <button class="btn" id="syPull" style="margin-bottom:4px">⬇️ 从云端恢复本展会</button>
+  <div class="sec">Sync actions</div>
+  <button class="btn btn-primary" id="sySync" style="margin-bottom:12px">🔄 Two-way sync (pull cloud changes first, then push local ones)</button>
+  <button class="btn" id="syPush" style="margin-bottom:12px">⬆️ Backup now (push local changes only)</button>
+  <button class="btn" id="syPushFull" style="margin-bottom:12px">🖼️ Full backup now (with originals)</button>
+  <button class="btn" id="syPull" style="margin-bottom:4px">⬇️ Restore this fair from cloud</button>
   <div class="tiny muted" style="margin-bottom:12px">
-    按展会 <b>ID 精确匹配</b>——只适用于两端已经存在同一个展会。
-    换设备拉电脑端数据，请用下面的「📥 拉取云端全部展会」。
+    Matched by <b>exact fair ID</b> — only works when both sides already hold the same fair.
+    To bring data to a new device, use Pull all fairs from cloud below.
   </div>
   <div class="btn-row">
-    <button class="btn" id="syPullAll">📥 拉取云端全部展会</button>
-    <button class="btn" id="syPushAll">📤 备份本机全部展会</button>
+    <button class="btn" id="syPullAll">📥 Pull all fairs from cloud</button>
+    <button class="btn" id="syPushAll">📤 Back up all local fairs</button>
   </div>
   <div class="tiny muted" style="margin-top:6px">
-    换设备时：装好 PWA → 这里填同一个 GitHub 账号的 token 和同一个私有仓 →
-    点「拉取云端全部展会」，展会与记录就都过来了。同一条记录以<b>最后修改时间</b>为准，
-    两边都改过则保留时间更晚的那份。
+    New device: install the PWA → fill in the same GitHub token and the same private repo here →
+    tap Pull all fairs from cloud. For each record the <b>last modified time</b> wins, so when both sides
+    changed it the newer copy is kept.
   </div>
   <div id="syRemoteList" class="card tiny hide" style="margin-top:10px"></div>
 
-  <div class="sec">仓库与访问控制</div>
+  <div class="sec">Repository &amp; access</div>
   <div class="card">
-    <div class="field"><label>仓库拥有者 (owner)</label><input id="syOwner" type="text" placeholder="例如 nbleo" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
-    <div class="field"><label>仓库名 (repo)</label><input id="syRepo" type="text" placeholder="例如 my-fair-data（须为私有仓）" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
-    <div class="field"><label>分支</label><input id="syBranch" type="text" value="main" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
-    <div class="field"><label>云端根目录</label><input id="syRoot" type="text" value="users" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <div class="field"><label>Owner</label><input id="syOwner" type="text" placeholder="e.g. nbleo" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+    <div class="field"><label>Repository name (repo)</label><input id="syRepo" type="text" placeholder="e.g. my-fair-data (must be private)" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+    <div class="field"><label>Branch</label><input id="syBranch" type="text" value="main" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+    <div class="field"><label>Cloud root folder</label><input id="syRoot" type="text" value="users" autocapitalize="none" autocorrect="off" spellcheck="false">
       <div class="tiny muted" style="margin-top:6px">
-        按访问者隔离：<code>users/&lt;身份&gt;/fairs/&lt;展会ID&gt;/</code>。
-        每个人只写自己的命名空间，互不覆盖。
+        Isolated per visitor: <code>users/&lt;identity&gt;/fairs/&lt;fairId&gt;/</code>.
+        Everyone writes only to their own namespace, so nobody overwrites anyone else.
       </div>
     </div>
-    <div class="field"><label>访问者命名空间（读不到 GitHub 身份时手填）</label>
-      <input id="syNamespace" type="text" placeholder="例如 leo / buyer-wang" autocapitalize="none" autocorrect="off" spellcheck="false">
-      <div class="tiny muted" style="margin-top:6px">正常情况下「测试连接」会自动填入 GitHub 用户名，这一栏留空即可。</div>
+    <div class="field"><label>Visitor namespace (fill in manually if the GitHub identity cannot be read)</label>
+      <input id="syNamespace" type="text" placeholder="e.g. leo / buyer-wang" autocapitalize="none" autocorrect="off" spellcheck="false">
+      <div class="tiny muted" style="margin-top:6px">Test connection fills in your GitHub username automatically; leave this blank in normal use.</div>
     </div>
     <div class="field"><label>Personal Access Token</label>
       <input id="syToken" type="password" placeholder="github_pat_… / ghp_…" autocapitalize="none" autocorrect="off" spellcheck="false">
       <div class="tiny muted" style="margin-top:6px">
-        token 明文存在本机浏览器里，用 fine-grained token 并只授权这一个私有仓库。
+        The token is stored in plain text in this browser. Use a fine-grained token limited to this one private repo.
       </div>
     </div>
     <div class="btn-row">
-      <button class="btn" id="syTest">🔌 测试连接</button>
-      <button class="btn btn-accent" id="sySave">保存配置</button>
+      <button class="btn" id="syTest">🔌 Test connection</button>
+      <button class="btn btn-accent" id="sySave">Save settings</button>
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn btn-ghost" id="syDiag">🩺 Diagnose network</button>
     </div>
   </div>
 
-  <div class="sec">云端加密（可选）</div>
+  <div class="sec">Cloud encryption (optional)</div>
   <div class="card">
-    <div class="field"><label>加密上传的数据</label>
+    <div class="field"><label>Encrypt uploaded data</label>
       <div class="chips" id="syEnc">
-        <button class="chip" data-v="off" aria-pressed="true">关闭（依赖私有仓库）</button>
-        <button class="chip" data-v="on" aria-pressed="false">开启 AES-GCM</button>
+        <button class="chip" data-v="off" aria-pressed="true">Off (rely on the private repo)</button>
+        <button class="chip" data-v="on" aria-pressed="false">Enable AES-GCM</button>
       </div>
     </div>
-    <div class="field"><label>加密口令</label>
-      <input id="syPass" type="password" placeholder="仅在开启加密时需要" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <div class="field"><label>Passphrase</label>
+      <input id="syPass" type="password" placeholder="Only needed when encryption is on" autocapitalize="none" autocorrect="off" spellcheck="false">
       <div class="tiny muted" style="margin-top:6px">
-        PBKDF2-SHA256 十万轮派生 + AES-GCM-256，密钥<b>不上传</b>；只加密记录与照片，
-        meta.json（统计数字与 salt）保持明文。<br>
-        <b style="color:var(--danger)">口令不保存在云端，忘记后云端数据无法恢复</b>——本机数据不受影响。
+        PBKDF2-SHA256 (100k rounds) + AES-GCM-256; the key is <b>never uploaded</b>. Records and photos are
+        encrypted, meta.json (counts and salt) stays in plain text.<br>
+        <b style="color:var(--danger)">The passphrase is not stored in the cloud — lose it and the cloud copy
+        cannot be recovered.</b> Local data is unaffected.
       </div>
     </div>
   </div>
 
-  <div class="sec">访问控制</div>
+  <div class="sec">Access control</div>
   <div class="card">
     <div class="tiny muted" style="line-height:1.7">
-      程序代码在<b>公开仓库</b>（Pages 站点，任何人可读），供应商数据只进<b>私有仓库</b>。
-      上传前会校验可见性；<b>公开仓库一律拒绝写入</b>，程序仓库也会被直接拦下。
-      <br>要让同事看到自己的数据：把他加为私有仓库的 Collaborator；
-      要让他录自己的数据：让他填同一个私有仓库，数据落在他自己的命名空间下。
+      The app code lives in a <b>public repository</b> (GitHub Pages, readable by anyone); factory data goes
+      only to a <b>private repository</b>. Visibility is checked before every upload — <b>writes to a public
+      repo are always refused</b>, and the app repo itself is blocked too.
+      <br>To let a colleague read your data, add them as a Collaborator on the private repo. To let them
+      record their own, have them point at the same private repo: their data lands in their own namespace.
     </div>
     <div style="margin-top:10px">
-      <button class="btn" id="syInvite">👥 管理可访问人员（GitHub 邀请页）</button>
+      <button class="btn" id="syInvite">👥 Manage access (GitHub invite page)</button>
     </div>
   </div>
 
-  <div class="sec">备份日志</div>
-  <div id="syLog" class="card tiny muted" style="max-height:220px;overflow:auto">尚无操作</div>
+  <div class="sec">Backup log</div>
+  <div id="syLog" class="card tiny muted" style="max-height:220px;overflow:auto">No activity yet</div>
 </section>
 
 <!-- ============ REPORT ============ -->
 <section id="scr-report" class="hide">
   <div class="banner banner-info">
-    <div>📄 在手机上直接生成<b>英文报告</b>（与电脑端脚本同一套口径：权重、分层措辞一致），
-      结构为 Supplier List → Supplier Catalogue → Fair Summary，照片、评分评语、名片与亮点产品全部内嵌。</div>
+    <div>📄 Build the <b>English report</b> right on the phone, using the same scoring weights and tier
+      wording as the desktop script. Structure: Factory List → Factory Catalogue → Fair Summary, with photos,
+      score comments, name cards and highlight products embedded.</div>
   </div>
 
-  <div class="sec">报告抬头（封面上的 Prepared for）</div>
+  <div class="sec">Report header (Prepared for)</div>
   <div class="card">
     <input id="rpFor" type="text" placeholder="Schulte – Shower enclosure sourcing" autocapitalize="words">
-    <div class="tiny muted" style="margin-top:6px">只写在本机，用于报告封面，可留空。</div>
+    <div class="tiny muted" style="margin-top:6px">Stored on this device only, used on the report cover. Can be blank.</div>
   </div>
 
-  <div class="sec">范围</div>
+  <div class="sec">Scope</div>
   <div class="card">
     <div class="chips" id="rpScope">
-      <button class="chip" data-scope="fair">当前展会</button>
-      <button class="chip" data-scope="all">全部展会合并</button>
+      <button class="chip" data-scope="fair">This fair</button>
+      <button class="chip" data-scope="all">All fairs merged</button>
     </div>
     <div class="tiny muted" style="margin-top:8px" id="rpScopeHint"></div>
   </div>
 
-  <div class="sec">照片</div>
+  <div class="sec">Photos</div>
   <div class="card">
     <div class="chips" id="rpPhoto">
-      <button class="chip" data-photo="1">含照片（不限张数，文件会变大）</button>
-      <button class="chip" data-photo="0">不含照片（体积小、速度快）</button>
+      <button class="chip" data-photo="1">With photos (no limit, larger file)</button>
+      <button class="chip" data-photo="0">Without photos (small and fast)</button>
     </div>
   </div>
 
-  <div class="sec">内容概览</div>
-  <div id="rpSummary" class="card tiny muted">正在统计…</div>
+  <div class="sec">Content overview</div>
+  <div id="rpSummary" class="card tiny muted">Counting…</div>
 
-  <button class="btn btn-primary" id="btnRpHtml" style="margin-bottom:12px">📄　导出 / 分享 HTML 报告</button>
-  <button class="btn btn-accent" id="btnRpDocx" style="margin-bottom:12px">📝 导出 / 分享 DOCX 报告</button>
+  <button class="btn btn-primary" id="btnRpHtml" style="margin-bottom:12px">📄　Export / share HTML report</button>
+  <button class="btn btn-accent" id="btnRpDocx" style="margin-bottom:12px">📝 Export / share DOCX report</button>
   <div class="btn-row" style="margin-bottom:12px">
-    <button class="btn" id="btnRpXlsx">📊 导出 Excel</button>
-    <button class="btn" id="btnRpCsv">🗂 导出 CSV</button>
+    <button class="btn" id="btnRpXlsx">📊 Export Excel</button>
+    <button class="btn" id="btnRpCsv">🗂 Export CSV</button>
   </div>
   <div class="tiny muted" style="margin-bottom:16px;line-height:1.7">
-    HTML 报告：单文件、双击即看，照片内嵌，适合微信发人和当场翻。<br>
-    DOCX 报告：Word / WPS 直接打开，可以接着改、加公司抬头再转 PDF —— 给总部发这份。<br>
-    iPhone 分享面板可选「存储到文件」或发到微信；HTML 报告里点右上角
-    <b>Print / Save as PDF</b> 可以直接存成 PDF。
+    HTML report: one self-contained file, opens on a double tap, photos embedded — easy to send and
+    read on site.<br>DOCX report: opens in Word / WPS, can be edited further and turned into a PDF —
+    send this one to HQ.<br>The iPhone share sheet offers Save to Files; inside the HTML report use
+    <b>Print / Save as PDF</b> in the top right.
   <div id="rpResult" class="card hide"></div>
 </section>
 
 <!-- ============ SETTINGS ============ -->
 <section id="scr-settings" class="hide">
-  <div class="sec">当前展会</div>
+  <div class="sec">This fair</div>
   <div class="card">
-    <div class="kv"><span class="k">展会</span><span class="v" id="setFairName">-</span></div>
-    <div class="kv"><span class="k">展期</span><span class="v" id="setFairDates">-</span></div>
+    <div class="kv"><span class="k">Fair</span><span class="v" id="setFairName">-</span></div>
+    <div class="kv"><span class="k">Dates</span><span class="v" id="setFairDates">-</span></div>
     <div style="margin-top:10px" class="btn-row">
-      <button class="btn" onclick="go('fairs')">🎪 切换展会</button>
-      <button class="btn" onclick="editCurrentFair()">✏️ 编辑本展会</button>
+      <button class="btn" onclick="go('fairs')">🎪 Switch fair</button>
+      <button class="btn" onclick="editCurrentFair()">✏️ Edit this fair</button>
     </div>
   </div>
-  <div class="sec">观展总结</div>
+  <div class="sec">Fair summary</div>
   <div class="card">
-    <div class="tiny muted" id="setSummaryTxt">尚未填写。</div>
+    <div class="tiny muted" id="setSummaryTxt">Not filled in yet.</div>
     <div style="margin-top:10px">
-      <button class="btn" onclick="editCurrentFair()">✍️ 撰写 / 修改观展总结</button>
+      <button class="btn" onclick="editCurrentFair()">✍️ Write / edit fair summary</button>
     </div>
     <div class="tiny muted" style="margin-top:8px">
-      多段文本，会按段落原样排进英文报告的最后一项。中英文混写也可以。
+      Multi-paragraph text, printed as the last chapter of the report. Mixed languages are fine.
     </div>
   </div>
-  <div class="sec">展会默认值</div>
-  <div class="field"><label>默认展馆</label><select id="setHall"></select></div>
-  <div class="sec">照片与系统相册</div>
-  <div class="field"><label>用相机拍完自动存一份到系统相册</label>
+  <div class="sec">Fair defaults</div>
+  <div class="field"><label>Default hall</label><select id="setHall"></select></div>
+  <div class="sec">Photos &amp; camera roll</div>
+  <div class="field"><label>Copy camera shots to the camera roll</label>
     <div class="chips" id="setGallery">
-      <button class="chip" data-v="on">开（推荐）</button>
-      <button class="chip" data-v="off">关</button>
+      <button class="chip" data-v="on">On (recommended)</button>
+      <button class="chip" data-v="off">Off</button>
     </div>
     <div class="tiny muted" style="margin-top:6px">
-      网页不能自己写进相册，只能：<b>苹果</b>拍完自动弹系统分享面板，选一次「存储到照片」即进相册；
-      <b>安卓 / 电脑</b>静默存到「下载」目录，相册里通常直接可见。<br>
-      从相册里选的照片不会重复保存。任何时候都能在照片右上角点 <b>⬇</b> 单独存一张。
+      A web page cannot write to the camera roll directly. On <b>iOS</b> the share sheet opens after each
+      shot — pick Save to Photos once; on <b>Android / desktop</b> the file is saved silently to Downloads and
+      usually shows up in the gallery.<br>Photos picked from the gallery are not saved twice. Any single photo
+      can still be saved with the <b>⬇</b> button in its top-right corner.
     </div>
   </div>
-  <div class="sec">评分权重（合计须为 100%）</div>
-  <div class="field"><label>快速套用</label>
+  <div class="sec">Scoring weights (must add up to 100%)</div>
+  <div class="field"><label>Presets</label>
     <div class="chips" id="setWPreset">
-      <button class="chip" data-w="default">均衡（默认）</button>
-      <button class="chip" data-w="design">外观优先</button>
-      <button class="chip" data-w="quality">质量优先</button>
-      <button class="chip" data-w="details">细节优先</button>
+      <button class="chip" data-w="default">Balanced (default)</button>
+      <button class="chip" data-w="design">Design first</button>
+      <button class="chip" data-w="quality">Quality first</button>
+      <button class="chip" data-w="details">Details first</button>
     </div>
     <div class="tiny muted" style="margin-top:6px">
-      每个维度按 1–5 星打分，权重合计必须为 100%。套用后仍可微调，记得点「保存」。
-      权重会随备份一起上传，其他设备同步后自动一致。
+      Each dimension is scored 1–5 stars and the weights must add up to 100%. Presets can still be
+      fine-tuned — remember to tap Save. Weights travel with the backup, so other devices match after syncing.
     </div>
   </div>
   <div id="setWeights"></div>
   <div class="btn-row" style="margin-top:12px">
-    <button class="btn" id="btnResetW">恢复默认</button>
-    <button class="btn btn-accent" id="btnSaveW">保存</button>
+    <button class="btn" id="btnResetW">Reset to default</button>
+    <button class="btn btn-accent" id="btnSaveW">Save</button>
   </div>
-  <div class="sec">关于</div>
+  <div class="sec">About</div>
   <div class="card tiny muted">
-    <b>本机永远是第一副本</b>：录入先写本地 IndexedDB，离线可用；云备份只是在您点击或定时器到期时
-    写入自己的私有 GitHub 仓库。<br>
-    在另一台设备（或电脑）上装好本 PWA，用<b>同一个 GitHub 账号的 token 和同一个私有仓</b>登录，
-    点「拉取云端全部展会」即可看到同样的内容。<br>
-    即便如此，卸载 PWA、清理网站数据仍会丢数据，<b>导出 ZIP 与云备份请各留一份</b>。<br><br>
+    <b>This device is always the first copy</b>: entries go to IndexedDB first and work offline; the cloud
+    copy is written to your own private GitHub repo when you tap backup or the timer fires.<br>
+    Install the PWA on another device and sign in with <b>the same GitHub token and the same private
+    repo</b>, then tap Pull all fairs from cloud to see the same content.<br>
+    Even so, uninstalling the PWA or clearing site data still loses everything —
+    <b>keep both a ZIP export and a cloud backup</b>.<br><br>
     <span id="aboutVer"></span>
   </div>
 </section>
@@ -654,98 +664,126 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 "use strict";
 /* ============================ 常量 ============================ */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "2.0.1";
 
-/* 展会预设：只预填城市/场馆/展区，不限制品类，任何展会都能自建 */
+/* Fair presets: only prefills city / venue / area. Any fair can be created from scratch. */
 const FAIR_PRESETS = [
-  {k:"canton-1", label:"广交会 第一期", city:"广州", venue:"广交会展馆", area:"五金 / 工具 / 建材"},
-  {k:"canton-2", label:"广交会 第二期", city:"广州", venue:"广交会展馆", area:"卫浴设备 / 建筑装饰材料"},
-  {k:"canton-3", label:"广交会 第三期", city:"广州", venue:"广交会展馆", area:"家居 / 日用消费品"},
-  {k:"kbc",      label:"上海 KBC 厨卫展", city:"上海", venue:"上海新国际博览中心", area:"厨房 / 卫浴"},
-  {k:"ish",      label:"德国 ISH 法兰克福", city:"Frankfurt", venue:"Messe Frankfurt", area:"Sanitary / Heating / AC"},
-  {k:"buildmat", label:"建博会 / 建材展", city:"广州", venue:"广交会展馆", area:"建筑装饰材料"},
-  {k:"other",    label:"其他（手动填写）", city:"", venue:"", area:""}
+  {k:"canton-1", label:"Canton Fair · Phase I", city:"Guangzhou", venue:"Canton Fair Complex", area:"Hardware / Tools / Building Materials"},
+  {k:"canton-2", label:"Canton Fair · Phase II", city:"Guangzhou", venue:"Canton Fair Complex", area:"Bathroom Equipment / Building Materials"},
+  {k:"canton-3", label:"Canton Fair · Phase III", city:"Guangzhou", venue:"Canton Fair Complex", area:"Household / Consumer Goods"},
+  {k:"kbc",      label:"Shanghai KBC Kitchen & Bath", city:"Shanghai", venue:"SNIEC", area:"Kitchen / Bathroom"},
+  {k:"ish",      label:"ISH Frankfurt · Germany", city:"Frankfurt", venue:"Messe Frankfurt", area:"Sanitary / Heating / AC"},
+  {k:"buildmat", label:"Build & Decoration Expo", city:"Guangzhou", venue:"Canton Fair Complex", area:"Building Materials"},
+  {k:"other",    label:"Other (enter manually)", city:"", venue:"", area:""}
 ];
 
-const HALLS = ["A区","B区","C区","D区","未定"];
-const AREAS = ["卫浴设备","建筑装饰材料","家居用品","玻璃工艺品","餐厨用具","家具","进口展","其他"];
-const TITLES = ["","Sales 销售","Manager 经理","Owner 负责人","Engineer 工程师","Director 总监","其他"];
+const HALLS = ["Hall A","Hall B","Hall C","Hall D","TBD"];
+const AREAS = ["Bathroom Equipment","Building Materials","Household Goods","Glass & Crafts",
+  "Kitchenware","Furniture","International Pavilion","Other"];
+const TITLES = ["","Sales","Manager","Owner","Engineer","Director","Other"];
+/* 分类保持三元组 [code, 界面显示, 报告显示]：报告侧一直读第三项，
+   历史记录存的是 code，所以只把前两项换成英文不影响任何既有数据。 */
 const CATEGORIES = [
-  ["shower_enclosure","淋浴房整体","Shower Enclosure"],
-  ["smart_toilet","智能马桶","Smart Toilet"],
-  ["tempered_glass","钢化玻璃","Tempered Glass"],
-  ["aluminium_profile","铝型材","Aluminium Profile"],
-  ["hardware","五金配件","Hardware & Fittings"],
-  ["roller_hinge","滑轮/铰链","Rollers & Hinges"],
-  ["seal","密封条/磁条","Seals & Magnetic Strips"],
-  ["tray","底盆/石基","Shower Tray & Base"],
-  ["faucet_shower","龙头/花洒","Faucets & Shower Sets"],
-  ["vanity","浴室柜","Bathroom Vanity"],
-  ["other","其他","Other"]
+  ["shower_enclosure","Shower Enclosure","Shower Enclosure"],
+  ["smart_toilet","Smart Toilet","Smart Toilet"],
+  /* 新增：普通马桶（落地式，区别于智能马桶） */
+  ["floor_toilet","Floor-Standing Toilet","Floor-Standing Toilet"],
+  ["tempered_glass","Tempered Glass","Tempered Glass"],
+  ["aluminium_profile","Aluminium Profile","Aluminium Profile"],
+  ["hardware","Hardware & Fittings","Hardware & Fittings"],
+  ["roller_hinge","Rollers & Hinges","Rollers & Hinges"],
+  ["seal","Seals & Magnetic Strips","Seals & Magnetic Strips"],
+  ["tray","Shower Tray & Base","Shower Tray & Base"],
+  ["faucet_shower","Faucets & Shower Sets","Faucets & Shower Sets"],
+  ["vanity","Bathroom Vanity","Bathroom Vanity"],
+  ["other","Other","Other"]
 ];
-const MOQ_UNITS = ["","pcs 件","sets 套","order 每单","container 每柜","m² 平方米","其他"];
-const CURRENCIES = ["CNY","USD","EUR","其他"];
+/* 旧数据里这些字段存过中文值（"A区" / "卫浴设备" / "Sales 销售" …）。
+   读取时按这张表换算成英文显示，用户下次保存即自然落盘为新值——
+   不主动批量改库，避免写坏历史记录；报告与 Excel 导出也走同一张表。 */
+const LEGACY_VALUES = {
+  "A区":"Hall A", "B区":"Hall B", "C区":"Hall C", "D区":"Hall D", "未定":"TBD",
+  "卫浴设备":"Bathroom Equipment", "建筑装饰材料":"Building Materials",
+  "家居用品":"Household Goods", "玻璃工艺品":"Glass & Crafts", "餐厨用具":"Kitchenware",
+  "家具":"Furniture", "进口展":"International Pavilion", "其他":"Other",
+  "Sales 销售":"Sales", "Manager 经理":"Manager", "Owner 负责人":"Owner",
+  "Engineer 工程师":"Engineer", "Director 总监":"Director"
+};
+function valueEn(v){ return LEGACY_VALUES[String(v||"").trim()] || v; }
+
+const MOQ_UNITS = ["","pcs","sets","order","container","m²","Other"];
+const CURRENCIES = ["CNY","USD","EUR","Other"];
 const INCOTERMS = ["EXW","FOB","CIF","DDP","Unknown"];
-const CAP_UNITS = ["","pcs/month","sets/month","m²/month","containers/month","其他"];
-const MARKETS = ["Germany 德国","EU (other) 欧盟其他","UK 英国","North America 北美","Middle East 中东","Asia (other) 亚洲其他","Other 其他"];
+const CAP_UNITS = ["","pcs/month","sets/month","m²/month","containers/month","Other"];
+const MARKETS = ["Germany","EU (other)","UK","North America","Middle East","Asia (other)","Other"];
+/* 旧记录里的 market 值带中文（"Germany 德国"），报告侧用它还原成英文 */
+const MARKET_LEGACY = {
+  "Germany 德国":"Germany", "EU (other) 欧盟其他":"EU (other)", "UK 英国":"UK",
+  "North America 北美":"North America", "Middle East 中东":"Middle East",
+  "Asia (other) 亚洲其他":"Asia (other)", "Other 其他":"Other"
+};
 const FOLLOWUPS = [
-  ["new","新建立","New"],["docs","索要资料","Request Docs"],["quote","待报价","Quote"],
-  ["sample","待样品","Sample"],["hq","总部评审","HQ Review"],["hold","暂缓","Hold"],["reject","淘汰","Reject"]
+  ["new","New","New"],["docs","Request Docs","Request Docs"],["quote","Quote","Quote"],
+  ["sample","Sample","Sample"],["hq","HQ Review","HQ Review"],["hold","Hold","Hold"],["reject","Reject","Reject"]
 ];
 const COMPLIANCE = [
-  ["CE","CE 标识"],["EN14428","EN 14428 淋浴房"],["EN12150","EN 12150 钢化玻璃"],
-  ["KTW","KTW 德国饮用水"],["DWD","DWD 饮用水"],["REACH","REACH"],["RoHS","RoHS"],["ISO9001","ISO 9001"]
+  ["CE","CE marking"],["EN14428","EN 14428 (shower enclosures)"],["EN12150","EN 12150 (tempered glass)"],
+  ["KTW","KTW (German drinking water)"],["DWD","DWD (drinking water)"],["REACH","REACH"],
+  ["RoHS","RoHS"],["ISO9001","ISO 9001"]
 ];
-/* 合规证据状态：区分"供应商声称"与"文件已取得" */
+/* 合规证据状态：区分"工厂声称"与"文件已取得" */
 const CSTAT = [
-  ["unknown","未知","Unknown"],["supplier_claimed","供应商声称","Supplier claimed"],
-  ["document_seen","现场看到文件","Document seen"],["copy_received","已取得副本","Copy received"],
-  ["not_available","无/不适用","Not available"]
+  ["unknown","Unknown","Unknown"],["supplier_claimed","Factory claimed","Supplier claimed"],
+  ["document_seen","Document seen","Document seen"],["copy_received","Copy received","Copy received"],
+  ["not_available","Not available","Not available"]
 ];
 /* v1.7 起评分改为三项：Design / Quality / Details，每项 1–5 星。
    旧的六维记录（fit / compliance / price / capacity / communication）不丢，
    首次读取时按 LEGACY_SCORE_MAP 折算到新维度（见 migrateScore）。 */
 const SCORE_DIMS = [
-  ["design","设计与外观","Design"],
-  ["quality","质量与工艺","Quality"],
-  ["details","细节做工","Details"]
+  ["design","Design","Design"],
+  ["quality","Quality","Quality"],
+  ["details","Details","Details"]
 ];
 const LEGACY_SCORE_MAP = {design:"fit", details:"compliance"};
 const DEFAULT_WEIGHTS = {design:30, quality:50, details:20};
-const PHOTO_TYPES = [["booth","展位"],["namecard","名片"],["product","产品"],
-  ["highlight","亮点产品"],["certificate","证书"],["other","其他"]];
+const PHOTO_TYPES = [["booth","Booth"],["namecard","Name card"],["product","Product"],
+  ["highlight","Highlight"],["certificate","Certificate"],["other","Other"]];
 
 const FIELDS = [
-  {sec:"公司信息", items:[
-    {k:"companyNameZh",label:"公司中文名",type:"text",req:true},
-    {k:"companyNameEn",label:"英文名（无则留空，不要臆造）",type:"text"},
-    {k:"hall",label:"展馆",type:"select",opts:HALLS},
-    {k:"area",label:"展区",type:"select",opts:AREAS},
-    {k:"boothNo",label:"展位号",type:"text",norm:"booth"}
+  {sec:"Company", items:[
+    {k:"companyNameZh",label:"Company name",type:"text",req:true},
+    {k:"companyNameEn",label:"English name (leave blank if none — do not invent)",type:"text"},
+    {k:"hall",label:"Hall",type:"select",opts:HALLS},
+    {k:"area",label:"Area",type:"select",opts:AREAS},
+    {k:"boothNo",label:"Booth",type:"text",norm:"booth"}
   ]},
-  {sec:"联系人", items:[
-    {k:"contactName",label:"姓名（必填）",type:"text",req:true},
-    {k:"contactTitle",label:"职位",type:"select",opts:TITLES},
-    {k:"phone",label:"手机（选填）",type:"tel"},
-    {k:"wechat",label:"微信（选填）",type:"text"},
-    {k:"email",label:"邮箱（选填）",type:"email"},
-    {k:"website",label:"网址（选填）",type:"url"}
+  {sec:"Contact", items:[
+    {k:"contactName",label:"Name (required)",type:"text",req:true},
+    {k:"contactTitle",label:"Title",type:"select",opts:TITLES},
+    {k:"phone",label:"Mobile (optional)",type:"tel"},
+    {k:"wechat",label:"WeChat (optional)",type:"text"},
+    {k:"email",label:"Email (optional)",type:"email"},
+    {k:"website",label:"Website (optional)",type:"url"}
   ]},
-  {sec:"产品", items:[
-    {k:"categories",label:"品类（可多选）",type:"chips",opts:CATEGORIES,req:true},
+  {sec:"Product", items:[
+    {k:"categories",label:"Categories (multi-select)",type:"chips",opts:CATEGORIES,req:true},
     /* v1.8：原「型号」输入项移除，产品线只留简介（旧记录里的 models 仍保留、导出照常读出） */
-    {k:"productDetails",label:"简介 / 公司简介",type:"textarea"}
+    {k:"productDetails",label:"Profile / Company profile",type:"textarea"}
   ]},
   /* 「商务条件」板块已于 v1.3 从录入页移除：现场谈不清 MOQ / 价格 / 交期，
      硬填只会得到一堆假数据。旧记录里的这些字段仍然保留，报告照常读出。
      真要补，回电脑端导出后由总部补进 Excel。 */
-  {sec:"跟进", items:[
-    {k:"followUpStatus",label:"跟进状态",type:"chips1",opts:FOLLOWUPS},
-    {k:"nextAction",label:"下一步动作",type:"textarea"},
-    {k:"nextActionDate",label:"目标日期",type:"date"}
+  {sec:"Follow-up", items:[
+    {k:"followUpStatus",label:"Follow-up status",type:"chips1",opts:FOLLOWUPS},
+    {k:"nextAction",label:"Next action",type:"textarea"},
+    {k:"nextActionDate",label:"Target date",type:"date"}
   ]},
-  {sec:"备注", items:[
-    {k:"notes",label:"备注（长按空格键用手机输入法语音输入更快）",type:"textarea"}
+  /* v1.9：意向与备注分开记。intent 记"这次谈到什么程度 / 有没有合作意向"，
+     notes 记现场看到的客观细节。报告里两行各自输出，互不覆盖。 */
+  {sec:"Notes", items:[
+    {k:"intent",label:"Note / intention",type:"textarea"},
+    {k:"notes",label:"Notes (voice input works well on the on-screen keyboard)",type:"textarea"}
   ]}
 ];
 
@@ -961,7 +999,7 @@ function fairSlug(f){
 function newFair(extra){
   const f={
     id:uid(), name:"", nameEn:"", city:"", venue:"", area:"",
-    phase:"", startDate:"", endDate:"", defaultHall:"A区",
+    phase:"", startDate:"", endDate:"", defaultHall:"Hall A",
     notes:"", archived:false,
     lastPushAt:null,            // 该展会最近一次成功上传的时间
     createdAt:now(), updatedAt:now(), deletedAt:null
@@ -982,8 +1020,8 @@ async function migrateLegacyFair(){
   if(fairs.length) return;
   const [s,p,ph]=await Promise.all([all("suppliers"), all("visitPlans"), all("photos")]);
   if(!s.length && !p.length && !ph.length) return;
-  const f=newFair({name:"迁移自旧版（未归类）", nameEn:"Migrated (unfiled)",
-                   notes:"由 v1 数据自动迁移，可在展会列表里改名或归档"});
+  const f=newFair({name:"Migrated from v1 (unfiled)", nameEn:"Migrated (unfiled)",
+    notes:"Created automatically from v1 data; rename or archive it in the fair list"});
   await put("fairs", f);
   for(const x of s){ if(!x.fairId){ x.fairId=f.id; await put("suppliers", x); } }
   for(const x of p){ if(!x.fairId){ x.fairId=f.id; await put("visitPlans", x); } }
@@ -1010,7 +1048,7 @@ function newSupplier(extra){
        存成 supplier 里的嵌套数组而不是新的 objectStore：无需改 schema，
        也能被现有的 buildBundle / 云同步 / ZIP 导入导出整包带走。 */
     highlights:[],
-    followUpStatus:"new", nextAction:"", nextActionDate:"", notes:"",
+    followUpStatus:"new", nextAction:"", nextActionDate:"", intent:"", notes:"",
     createdAt:now(), updatedAt:now(), deletedAt:null
   };
   for(const k of COMPLIANCE) s.compliance[k[0]]={status:"unknown",certNo:"",note:""};
@@ -1019,6 +1057,8 @@ function newSupplier(extra){
   if(!s.scoreNotes || typeof s.scoreNotes!=="object") s.scoreNotes={};
   if(!s.namecard || typeof s.namecard!=="object") s.namecard={name:"",title:"",phone:"",mobile:"",email:"",website:"",address:"",note:""};
   if(!Array.isArray(s.highlights)) s.highlights=[];
+  /* v2.0：意向和现场备注分两栏记，老记录没有 intent 字段，补空串 */
+  if(typeof s.intent!=="string") s.intent="";
   s.companyKey=normCompany(s.companyNameZh||s.companyNameEn); s.boothKey=normBooth(s.boothNo);
   return s;
 }
@@ -1026,12 +1066,12 @@ function touch(s){ s.updatedAt=now(); s.companyKey=normCompany(s.companyNameZh||
 
 function missing(s){
   const m=[];
-  if(!s.companyNameZh && !s.companyNameEn) m.push("公司名");
+  if(!s.companyNameZh && !s.companyNameEn) m.push("company name");
   /* v1.7：联系人只要求有姓名 —— 现场很多摊位只递名片、不加微信，
      硬要手机号只会逼大家编一个，反而污染后续跟进。手机 / 邮箱 / 微信均为选填。 */
-  if(!s.contactName) m.push("联系人");
-  if(!s.categories || !s.categories.length) m.push("品类");
-  if(!s.photoIds || !s.photoIds.length) m.push("照片");
+  if(!s.contactName) m.push("contact name");
+  if(!s.categories || !s.categories.length) m.push("categories");
+  if(!s.photoIds || !s.photoIds.length) m.push("photos");
   return m;
 }
 /* 六维老数据 → 三维新口径。只读时补齐内存副本，不改原始字段；
@@ -1112,7 +1152,7 @@ async function saveToGallery(blob, prefix){
     try{
       if(!navigator.canShare || !navigator.canShare({files:[file]})) return "failed";
       await Promise.race([
-        navigator.share({files:[file], title:"展会照片"}),
+        navigator.share({files:[file], title:"Fair photo"}),
         new Promise((_,rej)=>setTimeout(()=>rej(new Error("share timeout")),45000))
       ]);
       return "saved";
@@ -1137,13 +1177,13 @@ function galleryPrefix(supplierId){
   return slugify(nm) || "photo";
 }
 async function addPhoto(supplierId, file, type, opts){
-  if(!file || !file.size) throw new Error("没有有效的照片文件");
+  if(!file || !file.size) throw new Error("No valid photo file");
   /* 同步发起（不等结果），保住 iOS 需要的用户手势窗口 */
   const gTask = (opts && opts.gallery && SETTINGS.saveToGallery!==false)
     ? saveToGallery(file, galleryPrefix(supplierId)) : null;
   if(gTask) gTask.then(r=>{
-    if(r==="saved") toast("照片已存入系统相册", 2500);
-    else if(r==="failed") toast("没能自动存入相册，可在照片上点 ⬇ 手动保存", 5000);
+    if(r==="saved") toast("Photo saved to the camera roll", 2500);
+    else if(r==="failed") toast("Could not save to the camera roll automatically — tap ⬇ on the photo to save it", 5000);
   }, ()=>{});
   const big = (type==="namecard"||type==="certificate") ? await compress(file,2000,0.82) : await compress(file,1600,0.78);
   const thumb = await compress(file,320,0.7);
@@ -1158,9 +1198,9 @@ async function addPhoto(supplierId, file, type, opts){
 }
 
 /* ============================ 全局状态 ============================ */
-let SETTINGS={weights:Object.assign({},DEFAULT_WEIGHTS), defaultHall:"A区", deviceId:null, lastExportAt:null, saveToGallery:true};
+let SETTINGS={weights:Object.assign({},DEFAULT_WEIGHTS), defaultHall:"Hall A", deviceId:null, lastExportAt:null, saveToGallery:true};
 let SUPPLIERS=[], PLANS=[], PHOTOS=[], FAIRS=[];
-let FAIR=null;              // 当前展会（null = 未选择）
+let FAIR=null;              // This fair（null = 未选择）
 let CUR=null;              // 正在编辑的 supplier id
 let LIST_FILTER="all";
 let PENDING_PLAN=null;     // 预拜访转记录时的上下文
@@ -1169,7 +1209,7 @@ let LAST_SAVED_AT=null;
 async function loadSettings(){
   const w=await getKV("weights", null);
   SETTINGS.weights = w && SCORE_DIMS.every(d=>typeof w[d[0]]==="number") ? w : Object.assign({},DEFAULT_WEIGHTS);
-  SETTINGS.defaultHall = await getKV("defaultHall","A区");
+  SETTINGS.defaultHall = await getKV("defaultHall","Hall A");
   SETTINGS.lastExportAt = await getKV("lastExportAt", null);
   SETTINGS.saveToGallery = await getKV("saveToGallery", true);
   SETTINGS.deviceId = await getKV("deviceId", null);
@@ -1194,7 +1234,7 @@ async function refresh(){
   PLANS=p.filter(x=>!x.deletedAt && inFair(x));
   PHOTOS=ph.filter(x=>!x.deletedAt && inFair(x));
 }
-/* 切换当前展会 */
+/* 切换This fair */
 async function selectFair(id){
   /* 必须先刷新：编辑展会保存后，FAIRS 里还留着保存前那一份缓存对象，
      直接用它的话刚改的字段（比如观展总结）在当前会话里读不出来。 */
@@ -1222,15 +1262,15 @@ function photosOf(id){ return PHOTOS.filter(p=>p.supplierId===id).sort((a,b)=>a.
 /* ============================ 路由 ============================ */
 const SCREENS={
   home:{title:"FairRecorder", sub:"", back:false, fn:renderHome},
-  fairs:{title:"展会", sub:"切换或新建展会，数据互不干扰", back:true, fn:renderFairs},
-  fairNew:{title:"新建展会", back:true, fn:renderFairNew},
-  list:{title:"全部记录", back:true, fn:renderList},
-  edit:{title:"供应商详情", back:true, fn:null},
-  plans:{title:"预拜访清单", back:true, fn:renderPlans},
-  export:{title:"导出与恢复", back:true, fn:renderExport},
-  sync:{title:"云备份", back:true, fn:()=>{ if(window.renderSync) window.renderSync(); }},
-  report:{title:"生成报告", sub:"英文报告 · 可直接分享或存 PDF", back:true, fn:renderReport},
-  settings:{title:"设置", back:true, fn:renderSettings}
+  fairs:{title:"Fairs", sub:"Switch or create a fair — data stays separate", back:true, fn:renderFairs},
+  fairNew:{title:"New fair", back:true, fn:renderFairNew},
+  list:{title:"All records", back:true, fn:renderList},
+  edit:{title:"Factory details", back:true, fn:null},
+  plans:{title:"Visit plan", back:true, fn:renderPlans},
+  export:{title:"Export &amp; restore", back:true, fn:renderExport},
+  sync:{title:"Cloud backup", back:true, fn:()=>{ if(window.renderSync) window.renderSync(); }},
+  report:{title:"Generate report", sub:"English report · share it or save as PDF", back:true, fn:renderReport},
+  settings:{title:"Settings", back:true, fn:renderSettings}
 };
 let STACK=["home"];
 function go(name, opts){
@@ -1260,37 +1300,37 @@ async function renderHome(){
   let h="";
   const hours = SETTINGS.lastExportAt ? (Date.now()-new Date(SETTINGS.lastExportAt).getTime())/3600000 : 999;
   if(SUPPLIERS.length>0 && hours>12){
-    h += `<div class="banner banner-warn"><div>⚠️ ${SETTINGS.lastExportAt?"距上次导出已 "+Math.floor(hours)+" 小时":"尚未导出过"} —— 请点「导出备份」留一份。</div></div>`;
+    h += `<div class="banner banner-warn"><div>⚠️ ${SETTINGS.lastExportAt?"Last export was "+Math.floor(hours)+" hours ago":"Nothing exported yet"} — tap Export backup and keep a copy.</div></div>`;
   }
   if(drafts>0){
-    h += `<div class="banner banner-info"><div>📝 有 <b>${drafts}</b> 条草稿待补资料（缺公司名/联系人/品类/照片等）</div></div>`;
+    h += `<div class="banner banner-info"><div>📝 <b>${drafts}</b> draft record(s) still need details (company name / contact / categories / photos)</div></div>`;
   }
   $("#homeBanners").innerHTML=h;
-  $("#topSub").textContent = FAIR ? [FAIR.name||FAIR.nameEn, fairDateLabel(FAIR)].filter(Boolean).join(" · ") : "未选择展会";
+  $("#topSub").textContent = FAIR ? [FAIR.name||FAIR.nameEn, fairDateLabel(FAIR)].filter(Boolean).join(" · ") : "No fair selected";
 }
 function renderFairCard(){
   const el=$("#homeFair");
   if(!el) return;
   if(!FAIR){
-    el.innerHTML=`<div class="banner banner-warn"><div>尚未选择展会。
-      <button class="btn btn-accent" style="margin-top:10px" onclick="go('fairs')">去选择 / 新建展会</button></div></div>`;
+    el.innerHTML=`<div class="banner banner-warn"><div>No fair selected yet.
+      <button class="btn btn-accent" style="margin-top:10px" onclick="go('fairs')">Choose or create a fair</button></div></div>`;
     return;
   }
   const pend=pendingChanges();
   let backupTxt;
   if(FAIR.lastPushAt){
-    backupTxt = new Date(FAIR.lastPushAt).toLocaleString("zh-CN") + (pend ? `（${pend} 条未上传）` : "（已同步）");
+    backupTxt = new Date(FAIR.lastPushAt).toLocaleString("en-GB") + (pend ? ` (${pend} unsynced)` : " (synced)");
   }else{
-    backupTxt = pend ? `未备份（${pend} 条待上传）` : "未备份";
+    backupTxt = pend ? `Not backed up (${pend} pending)` : "Not backed up";
   }
   const dateTxt = [FAIR.startDate||"—", (FAIR.endDate && FAIR.endDate!==FAIR.startDate)?FAIR.endDate:""].filter(Boolean).join(" → ");
   el.innerHTML=`<div class="card">
-    <div class="kv"><span class="k">当前展会</span><span class="v">${esc(FAIR.name||FAIR.nameEn||"（未命名）")}</span></div>
-    ${FAIR.phase?`<div class="kv"><span class="k">届次 / 阶段</span><span class="v">${esc(FAIR.phase)}</span></div>`:""}
-    <div class="kv"><span class="k">展期</span><span class="v">${esc(dateTxt)}</span></div>
-    ${FAIR.city?`<div class="kv"><span class="k">城市 / 场馆</span><span class="v">${esc([FAIR.city,FAIR.venue].filter(Boolean).join(" · "))}</span></div>`:""}
-    <div class="kv"><span class="k">云端备份</span><span class="v">${esc(backupTxt)}</span></div>
-    <div style="margin-top:10px"><button class="btn" onclick="go('fairs')">🎪 切换 / 新建展会</button></div>
+    <div class="kv"><span class="k">This fair</span><span class="v">${esc(FAIR.name||FAIR.nameEn||"(untitled)")}</span></div>
+    ${FAIR.phase?`<div class="kv"><span class="k">Phase / Stage</span><span class="v">${esc(FAIR.phase)}</span></div>`:""}
+    <div class="kv"><span class="k">Dates</span><span class="v">${esc(dateTxt)}</span></div>
+    ${FAIR.city?`<div class="kv"><span class="k">City / venue</span><span class="v">${esc([FAIR.city,FAIR.venue].filter(Boolean).join(" · "))}</span></div>`:""}
+    <div class="kv"><span class="k">Cloud backup</span><span class="v">${esc(backupTxt)}</span></div>
+    <div style="margin-top:10px"><button class="btn" onclick="go('fairs')">🎪 Switch / new fair</button></div>
   </div>`;
 }
 $("#btnQuick").onclick=()=>{ CUR=null; PENDING_PLAN=null; quickCapture(); };
@@ -1302,18 +1342,18 @@ $("#btnSync").onclick=()=>go("sync");
 $("#btnReport").onclick=()=>go("report");
 $("#btnSettings").onclick=()=>go("settings");
 
-function fairHall(){ return (FAIR && FAIR.defaultHall) || SETTINGS.defaultHall || "A区"; }
-function fairArea(){ return (FAIR && FAIR.area) || "卫浴设备"; }
+function fairHall(){ return valueEn((FAIR && FAIR.defaultHall) || SETTINGS.defaultHall || "Hall A"); }
+function fairArea(){ return valueEn((FAIR && FAIR.area) || "Bathroom Equipment"); }
 
 /* 手动输入厂家：先建一条空记录直接进编辑页，照片可稍后从相册补 */
 async function addManualSupplier(){
-  if(!FAIR){ toast("请先选择或新建展会", 3000); go("fairs"); return; }
+  if(!FAIR){ toast("Pick or create a fair first", 3000); go("fairs"); return; }
   const s=newSupplier({hall:fairHall(), area:fairArea(), source:"manual"});
   await put("suppliers", s);
   await refresh(); CUR=s.id;
-  go("edit",{title:"手动输入厂家", sub:"先填公司名，其它可后补；照片在页面底部从相册添加", back:true});
+  go("edit",{title:"Manual entry", sub:"Company name first, the rest can wait; add photos at the bottom of the page", back:true});
   renderEdit(s.id);
-  toast("已创建空记录，先填公司名");
+  toast("Empty record created — fill in the company name");
 }
 
 /* ============================ 拍照秒存 ============================ */
@@ -1329,12 +1369,12 @@ function pickPhoto(cb, multiple){
     const files = usablePhotoFiles(Array.from(inp.files||[]));
     inp.value="";
     if(files.length) cb(files);
-    else toast("没有拍到照片，已取消", 2500);
+    else toast("No photo taken — cancelled", 2500);
   };
   inp.click();
 }
 async function quickCapture(){
-  if(!FAIR){ toast("请先选择或新建展会", 3000); go("fairs"); return; }
+  if(!FAIR){ toast("Pick or create a fair first", 3000); go("fairs"); return; }
   pickPhoto(async (files)=>{
     const s=newSupplier({hall:fairHall(), area:fairArea()});
     await put("suppliers", s);
@@ -1343,7 +1383,7 @@ async function quickCapture(){
     }catch(e){
       /* 没拍到 / 照片损坏：不要把一条空记录留在列表里 */
       await del("suppliers", s.id);
-      console.error(e); toast("照片没保存成功，未创建记录："+e.message, 4000);
+      console.error(e); toast("Photo not saved, record not created: "+e.message, 4000);
       await refresh(); renderHome(); return;
     }
     await refresh();
@@ -1355,7 +1395,7 @@ async function quickCapture(){
 async function quickFill(id){
   await refresh();
   const s=SUPPLIERS.find(x=>x.id===id); if(!s) return;
-  go("edit",{title:"刚拍的厂家", sub:"先填最关键的两项，其余晚上补", back:true});
+  go("edit",{title:"Just captured", sub:"Fill in the two key fields now, the rest tonight", back:true});
   renderEdit(id);
 }
 
@@ -1375,19 +1415,19 @@ async function renderFairs(){
     const cur = FAIR && f.id===FAIR.id;
     return `<div class="item ${cur?"on":""}" data-f="${f.id}">
       <div class="body">
-        <div class="nm">${esc(f.name||f.nameEn||"（未命名）")} ${cur?`<span class="badge b-complete">当前</span>`:""}${f.archived?`<span class="badge b-draft">已归档</span>`:""}</div>
+        <div class="nm">${esc(f.name||f.nameEn||"(untitled)")} ${cur?`<span class="badge b-complete">Current</span>`:""}${f.archived?`<span class="badge b-draft">Archived</span>`:""}</div>
         <div class="meta">${esc([fairDateLabel(f), f.city, f.phase].filter(Boolean).join(" · "))}</div>
-        <div class="meta">${n} 家 · ${pl} 条计划 · ${ph} 张照片${f.lastPushAt?" · 已备份":""}</div>
+        <div class="meta">${n} factories · ${pl} planned · ${ph} photos${f.lastPushAt?" · backed up":""}</div>
       </div>
-      <button class="btn btn-sm btn-danger" data-del="${f.id}" aria-label="删除展会">🗑</button>
+      <button class="btn btn-sm btn-danger" data-del="${f.id}" aria-label="Delete fair">🗑</button>
     </div>`;
   }).join("");
 
-  const main = rows(false) || `<div class="empty">还没有展会<br><span class="tiny">点上方「新建展会」建一个，例如「第140届广交会 第二期」</span></div>`;
+  const main = rows(false) || `<div class="empty">No fairs yet<br><span class="tiny">Tap New fair above, e.g. "140th Canton Fair, Phase II"</span></div>`;
   const arch = rows(true);
   $("#fairBody").innerHTML =
-    `<div class="sec">进行中</div>${main}` +
-    (arch?`<div class="sec">已归档</div>${arch}`:"");
+    `<div class="sec">Active</div>${main}` +
+    (arch?`<div class="sec">Archived</div>${arch}`:"");
 
   $$("#fairBody .item").forEach(el=>{
     el.onclick=()=>{ openFair(el.dataset.f); };
@@ -1399,9 +1439,9 @@ async function openFair(id){
   const f=FAIRS.find(x=>x.id===id);
   if(!f) return;
   const n=(await all("suppliers")).filter(s=>!s.deletedAt && s.fairId===id).length;
-  if(n===0 && !confirm("「"+(f.name||f.nameEn)+"」下还没有记录，要切换到它吗？")) return;
+  if(n===0 && !confirm("\""+(f.name||f.nameEn)+"\" has no records yet. Switch to it anyway?")) return;
   await selectFair(id);
-  toast("已切换到 "+(f.name||f.nameEn));
+  toast("Switched to "+(f.name||f.nameEn));
   go("home");
 }
 $("#btnFairNew").onclick=()=>{ EDIT_FAIR=null; go("fairNew"); renderFairNew(); };
@@ -1412,11 +1452,11 @@ function editCurrentFair(){
 $("#fCancel").onclick=()=>go("fairs");
 $("#fArchive").onclick=async()=>{
   if(!EDIT_FAIR) return;
-  if(!confirm("归档后该展会不在主列表显示，数据不会删除。确认？")) return;
+  if(!confirm("An archived fair is hidden from the main list; its data is kept. Continue?")) return;
   EDIT_FAIR.archived=true;
   await put("fairs", touchFair(EDIT_FAIR));
   if(FAIR && FAIR.id===EDIT_FAIR.id){ FAIR=null; await setKV("currentFairId", null); }
-  await refresh(); toast("已归档"); go("fairs");
+  await refresh(); toast("Archived"); go("fairs");
 };
 
 /* ============================ 彻底删除展会 ============================
@@ -1450,25 +1490,25 @@ async function deleteFairLocal(id, ts){
   f.deletedAt=t; await put("fairs", touchFair(f));
   if(FAIR && FAIR.id===id){ FAIR=null; await setKV("currentFairId", null); }
   await refresh();
-  return {deleted:true, id, name:f.name||f.nameEn||"（未命名）", suppliers:ns, plans:nv, photos:np};
+  return {deleted:true, id, name:f.name||f.nameEn||"(untitled)", suppliers:ns, plans:nv, photos:np};
 }
 /* 三重确认：确认后果 → 手输展会名 → 确认多端删除 */
 async function deleteFairFlow(id){
   const f=(await all("fairs")).find(x=>x.id===id);
   if(!f) return;
   const st=await fairStats(id);
-  const nm=String(f.name||f.nameEn||"（未命名）");
-  if(!confirm("①／③ 确认删除展会「"+nm+"」？\n\n"
-    + "本机将一并删除 "+st.suppliers+" 条记录、"+st.plans+" 条计划、"+st.photos+" 张照片。\n"
-    + "照片会被物理删除，无法恢复。\n\n建议先到「导出与恢复」留一份 ZIP。\n\n确定继续？")) return;
-  const typed=prompt("②／③ 请输入展会全称以确认删除：\n\n"+nm);
+  const nm=String(f.name||f.nameEn||"(untitled)");
+  if(!confirm("Step 1 of 3 — delete the fair \""+nm+"\"?\n\n"
+    + "This device will delete "+st.suppliers+" record(s), "+st.plans+" planned entr(ies) and "+st.photos+" photo(s).\n"
+    + "Photos are erased and cannot be recovered.\n\nExport a ZIP from Export & restore first.\n\nContinue?")) return;
+  const typed=prompt("Step 2 of 3 — type the full fair name to confirm:\n\n"+nm);
   if(typed==null) return;
-  if(String(typed).trim()!==nm){ toast("名称不一致，已取消删除", 4000); return; }
-  if(!confirm("③／③ 最后确认：删除后会在云端写入墓碑，其他设备下次拉取 / 双向同步时，"
-    + "这个展会连同它的记录也会一起删掉（那些设备上尚未上传的新记录同样会消失）。\n\n"
-    + "确定彻底删除「"+nm+"」？")) return;
+  if(String(typed).trim()!==nm){ toast("Name did not match — deletion cancelled", 4000); return; }
+  if(!confirm("Step 3 of 3 — a tombstone will be written to the cloud, so other devices will drop this "
+    + "fair and its records on their next pull or sync (unsynced new records there are lost too).\n\n"
+    + "Delete \""+nm+"\" permanently?")) return;
   const r=await deleteFairLocal(id);
-  let msg="已删除「"+nm+"」："+r.suppliers+" 条记录 / "+r.photos+" 张照片";
+  let msg="Deleted \""+nm+"\": "+r.suppliers+" records / "+r.photos+" photos";
   /* 墓碑必须推上去，别的设备才删得掉。
      注意不能用 FRSync.ready() 判断——它要求"当前有选中展会"，而刚删完的那一瞬间
      FAIR 必然是 null，会误判成未配置而跳过上传。直接调 pushTombstone，
@@ -1476,14 +1516,14 @@ async function deleteFairFlow(id){
   try{
     if(window.FRSync && window.FRSync.pushTombstone){
       await window.FRSync.pushTombstone(id);
-      msg+="；云端墓碑已上传，其他设备同步后会一并删除";
+      msg+="; tombstone uploaded — other devices will delete it on sync";
     }else{
-      msg+="；云备份未配置，其他设备不会自动删除";
+      msg+="; cloud backup is not configured, other devices will not delete it automatically";
     }
   }catch(e){
-    msg += /请先填写/.test(e.message)
-      ? "；云备份未配置，其他设备不会自动删除"
-      : "；云端墓碑上传失败（"+e.message+"），请到云备份页手动备份一次";
+    msg += /fill in/i.test(e.message)
+      ? "; cloud backup is not configured, other devices will not delete it automatically"
+      : "; tombstone upload failed ("+e.message+") — run a manual backup from Cloud backup"
   }
   await refresh();
   const next=FAIRS.filter(x=>!x.archived)[0];
@@ -1512,19 +1552,19 @@ function renderFairNew(){
     $("#fName").value=f.name||""; $("#fNameEn").value=f.nameEn||""; $("#fPhase").value=f.phase||"";
     $("#fStart").value=f.startDate||""; $("#fEnd").value=f.endDate||"";
     $("#fCity").value=f.city||""; $("#fVenue").value=f.venue||""; $("#fArea").value=f.area||"";
-    $("#fHall").value=f.defaultHall||"A区"; $("#fNote").value=f.notes||"";
+    $("#fHall").value=valueEn(f.defaultHall)||"Hall A"; $("#fNote").value=f.notes||"";
     $("#fSummary").value=f.summary||"";
     $("#fAdvanced").classList.remove("hide");
   }else{
     ["#fName","#fNameEn","#fPhase","#fStart","#fEnd","#fCity","#fVenue","#fArea","#fNote","#fSummary"]
       .forEach(s=>{ $(s).value=""; });
-    $("#fHall").value="A区";
+    $("#fHall").value="Hall A";
     $("#fAdvanced").classList.add("hide");
     $("#fPreset").onchange();
   }
   $("#fSave").onclick=async()=>{
     const name=$("#fName").value.trim();
-    if(!name){ toast("展会名称必填"); return; }
+    if(!name){ toast("Fair name is required"); return; }
     const data={ name, nameEn:$("#fNameEn").value.trim(), phase:$("#fPhase").value.trim(),
       startDate:$("#fStart").value, endDate:$("#fEnd").value, city:$("#fCity").value.trim(),
       venue:$("#fVenue").value.trim(), area:$("#fArea").value.trim(),
@@ -1534,13 +1574,13 @@ function renderFairNew(){
     if(EDIT_FAIR){ f2=Object.assign(EDIT_FAIR, data); await put("fairs", touchFair(f2)); }
     else { f2=newFair(data); await put("fairs", f2); }
     await selectFair(f2.id);
-    toast("已保存并切换到 "+name, 3000);
+    toast("Saved and switched to "+name, 3000);
     go("home");
   };
 }
 
 /* ============================ 列表 ============================ */
-const FILTERS=[["all","全部"],["draft","草稿"],["complete","完整"],["rated","已评分"],["planned","计划内"],["walk_in","现场发现"]];
+const FILTERS=[["all","All"],["draft","Draft"],["complete","Complete"],["rated","Rated"],["planned","Planned"],["walk_in","Walk-in"]];
 function renderFilters(){
   $("#filters").innerHTML = FILTERS.map(f=>
     `<button class="chip" data-f="${f[0]}" aria-pressed="${LIST_FILTER===f[0]}">${f[1]}</button>`).join("");
@@ -1563,7 +1603,7 @@ async function renderList(){
     if(sa!==sb) return sa-sb;
     return (b.updatedAt||"")<(a.updatedAt||"")?-1:1;
   });
-  if(!items.length){ $("#listBody").innerHTML=`<div class="empty">没有匹配的记录<br><span class="tiny">点主屏「拍照秒存」开始</span></div>`; return; }
+  if(!items.length){ $("#listBody").innerHTML=`<div class="empty">No matching records<br><span class="tiny">Start with Snap &amp; save on the home screen</span></div>`; return; }
   const urls=[];
   const html=items.map(s=>{
     const st=stateOf(s), miss=missing(s);
@@ -1571,14 +1611,14 @@ async function renderList(){
     const ph=photosOf(s.id)[0];
     let img="";
     if(ph){ const u=URL.createObjectURL(ph.thumbBlob||ph.blob); urls.push(u); img=`<img class="thumb" src="${u}" alt="">`; }
-    const badge = st==="draft" ? `<span class="badge b-draft">草稿</span>`
-      : st==="rated" ? `<span class="badge b-rated">已评分</span>`
-      : `<span class="badge b-complete">完整</span>`;
-    const src = s.source==="planned" ? `<span class="badge b-plan">计划</span>` : "";
+    const badge = st==="draft" ? `<span class="badge b-draft">Draft</span>`
+      : st==="rated" ? `<span class="badge b-rated">Rated</span>`
+      : `<span class="badge b-complete">Complete</span>`;
+    const src = s.source==="planned" ? `<span class="badge b-plan">Planned</span>` : "";
     const sc = t!=null ? `<span class="badge b-score">${t} ${tierOf(t)}</span>` : "";
-    const meta=[s.boothNo, (s.categories||[]).map(c=>labelOf(CATEGORIES,c)).join("/"), miss.length?"缺 "+miss.slice(0,3).join("/"):""].filter(Boolean).join(" · ");
+    const meta=[s.boothNo, (s.categories||[]).map(c=>labelOf(CATEGORIES,c)).join("/"), miss.length?"missing "+miss.slice(0,3).join("/"):""].filter(Boolean).join(" · ");
     return `<div class="item" data-id="${s.id}">${img}<div class="body">
-      <div class="nm">${esc(s.companyNameZh||s.companyNameEn||"（未命名）")}</div>
+      <div class="nm">${esc(s.companyNameZh||s.companyNameEn||"(untitled)")}</div>
       <div class="meta">${esc(meta)}</div>
       <div style="margin-top:5px">${badge}${src}${sc}</div>
     </div></div>`;
@@ -1594,18 +1634,18 @@ $("#q").oninput=()=>renderList();
 /* ============================ 编辑 ============================ */
 function renderEdit(id){
   const s=SUPPLIERS.find(x=>x.id===id);
-  if(!s){ $("#editForm").innerHTML='<div class="empty">记录不存在</div>'; return; }
+  if(!s){ $("#editForm").innerHTML='<div class="empty">Record not found</div>'; return; }
   const st=stateOf(s), miss=missing(s), t=weightedScore(s, SETTINGS.weights), blk=complianceBlockers(s);
-  $("#topTitle").textContent = s.companyNameZh||s.companyNameEn||"新建厂家";
+  $("#topTitle").textContent = s.companyNameZh||s.companyNameEn||"New factory";
 
   let h=`<div class="card">`;
-  if(st==="draft") h+=`<div class="banner banner-warn"><div>📝 草稿 —— 还缺：<b>${esc(miss.join("、"))}</b></div></div>`;
-  else if(st==="complete") h+=`<div class="banner banner-info"><div>✅ 信息完整。Design / Quality / Details 三项评分填满后才会进入排名。</div></div>`;
-  else h+=`<div class="banner banner-ok"><div>🏆 综合分 <b>${t}</b> / 100 · ${tierOf(t)}</div></div>`;
-  if(blk.length) h+=`<div class="banner banner-warn"><div>⚠️ 关键合规标为「无/不适用」：${esc(blk.join("、"))} —— 只能标为 Conditional，需先验证。</div></div>`;
-  h+=`<div class="kv"><span class="k">来源</span><span class="v">${s.source==="planned"?"预拜访计划":"现场发现"}</span></div>`;
-  h+=`<div class="kv"><span class="k">照片</span><span class="v">${(s.photoIds||[]).length} 张</span></div>`;
-  h+=`<div class="kv"><span class="k">最后保存</span><span class="v" id="savedAt">${LAST_SAVED_AT?hhmm(LAST_SAVED_AT):hhmm(s.updatedAt)}</span></div>`;
+  if(st==="draft") h+=`<div class="banner banner-warn"><div>📝 Draft — still missing: <b>${esc(miss.join(", "))}</b></div></div>`;
+  else if(st==="complete") h+=`<div class="banner banner-info"><div>✅ Complete. A record is ranked only once Design / Quality / Details are all scored.</div></div>`;
+  else h+=`<div class="banner banner-ok"><div>🏆 Overall score <b>${t}</b> / 100 · ${tierOf(t)}</div></div>`;
+  if(blk.length) h+=`<div class="banner banner-warn"><div>⚠️ Key compliance marked "Not available": ${esc(blk.join(", "))} — can only be rated Conditional; verify first.</div></div>`;
+  h+=`<div class="kv"><span class="k">Source</span><span class="v">${s.source==="planned"?"Visit plan":"Walk-in"}</span></div>`;
+  h+=`<div class="kv"><span class="k">Photos</span><span class="v">${(s.photoIds||[]).length}</span></div>`;
+  h+=`<div class="kv"><span class="k">Last saved</span><span class="v" id="savedAt">${LAST_SAVED_AT?hhmm(LAST_SAVED_AT):hhmm(s.updatedAt)}</span></div>`;
   h+=`</div>`;
   $("#editState").innerHTML=h;
 
@@ -1615,26 +1655,27 @@ function renderEdit(id){
     f+=`<div class="sec">${sec.sec}</div>`;
     for(const it of sec.items) f+=renderField(s, it);
     /* 名片紧跟联系人、亮点产品紧跟产品线：现场就是按这个顺序翻资料的 */
-    if(sec.sec==="联系人") f+=namecardBlock(s);
-    if(sec.sec==="产品") f+=highlightsBlock(s);
+    if(sec.sec==="Contact") f+=namecardBlock(s);
+    if(sec.sec==="Product") f+=highlightsBlock(s);
   }
   /* 「合规资质」板块已于 v1.3 从录入页移除：现场拿不到证书原件，八项逐个点
      只会拖慢录入。资质核验放在打样 / 下单前由总部统一收，收不到就是收不到，
      不该由现场记录背书。旧记录里的 compliance 字段保留，报告照常读出。 */
-  f+=`<div class="sec">评分（每项 1–5 星，全部填满才参与排名）</div>`;
-  f+=`<div class="card"><div class="tiny muted">星数对应这三项在设置里的权重，改权重到「设置 → 评分权重」。
-    每项下面都可以写一句评语，会原样进报告。</div></div>`;
+  f+=`<div class="sec">Scoring (1–5 stars each; all three must be filled in to be ranked)</div>`;
+  f+=`<div class="card"><div class="tiny muted">Stars are weighted by the three dimensions in Settings → Scoring weights.
+    Each dimension has a comments box below it; the text goes into the report verbatim.</div></div>`;
   for(const d of SCORE_DIMS){
     const v=s.score? s.score[d[0]] : null;
     const note=((s.scoreNotes||{})[d[0]])||"";
+    /* 两个标签现在都是英文，重复显示只会变成两行 "Design"；中文名保留在表里给老数据处理用 */
     f+=`<div class="score-row" data-d="${d[0]}">
-      <span class="lbl">${d[1]}<div class="tiny muted">${d[2]}</div></span>
+      <span class="lbl">${d[2]}${d[1]===d[2]?"":"<div class=\"tiny muted\">"+esc(d[1])+"</div>"}</span>
       <div class="stars">${[1,2,3,4,5].map(n=>`<button class="star" data-n="${n}" aria-pressed="${v===n}">${n}</button>`).join("")}</div>
       <span class="w">${SETTINGS.weights[d[0]]}%</span>
     </div>
     <div class="field" style="margin:-6px 0 12px">
       <label>${d[2]} — Comments</label>
-      <textarea data-sn="${d[0]}" style="min-height:74px" placeholder="为什么给这个分数？工艺、材料、手感……">${esc(note)}</textarea>
+      <textarea data-sn="${d[0]}" style="min-height:74px" placeholder="Why this rating? Workmanship, material, feel...">${esc(note)}</textarea>
     </div>`;
   }
   $("#editForm").innerHTML=f;
@@ -1650,20 +1691,20 @@ function renderEdit(id){
    注意 NAMECARD_FIELDS 仍然保留 —— 老数据里的 namecard 字段要照常导出，只是不再提供输入。 */
 function namecardBlock(s){
   const cards=photosOf(s.id).filter(p=>p.type==="namecard");
-  let h=`<div class="sec">名片</div><div class="card">`;
+  let h=`<div class="sec">Name card</div><div class="card">`;
   h+=`<div class="btn-row" style="margin-bottom:10px">
-    <button class="btn btn-accent" id="ncCam" style="flex:1">📇 拍摄名片</button>
-    <button class="btn btn-sm" id="ncPick" style="flex:1">🖼 从相册选</button>
+    <button class="btn btn-accent" id="ncCam" style="flex:1">📇 Capture name card</button>
+    <button class="btn btn-sm" id="ncPick" style="flex:1">🖼 Pick from gallery</button>
   </div>
-  <div class="tiny muted" style="margin-bottom:10px">拍清楚正面就行，可存多张。名片上的抬头常常跟实际对接人不是一个人，报告里单独列一栏。</div>`;
+  <div class="tiny muted" style="margin-bottom:10px">A clear shot of the front is enough; several can be stored. The name on a card is often not the person you talked to, so the report lists it separately.</div>`;
   if(cards.length){
     const urls=[], blobs=[];
     h+=`<div class="photos">`+cards.map((p,i)=>{
       const u=URL.createObjectURL(p.thumbBlob||p.blob); urls.push(u); blobs.push(p.blob);
       return `<div class="ph"><img src="${u}" alt="">
-        <button class="imgbtn" data-nci="${i}" aria-label="放大查看"></button>
-        <button class="x" data-ncdel="${p.id}" aria-label="删除名片照片">✕</button></div>`;
-    }).join("")+`</div><div class="tiny muted" style="margin:6px 0 12px">已存 ${cards.length} 张名片照片，点开可放大。</div>`;
+        <button class="imgbtn" data-nci="${i}" aria-label="Open full size"></button>
+        <button class="x" data-ncdel="${p.id}" aria-label="Delete name card photo">✕</button></div>`;
+    }).join("")+`</div><div class="tiny muted" style="margin:6px 0 12px">${cards.length} name card photo(s) stored — tap to enlarge.</div>`;
     setTimeout(()=>urls.forEach(u=>URL.revokeObjectURL(u)), 60000);
     setTimeout(()=>{ ncBindPhotos(cards, blobs); }, 0);
   }
@@ -1690,12 +1731,12 @@ function bindNamecard(s){
   const cam=$("#ncCam"), pick=$("#ncPick");
   if(cam) cam.onclick=()=>pickPhoto(async(files)=>{
     for(const f of files){ try{ await addPhoto(s.id, f, "namecard", {gallery:true}); }
-      catch(e){ toast("名片保存失败："+e.message,4000); } }
-    await refresh(); renderEdit(s.id); toast("已保存名片", 2500);
+      catch(e){ toast("Name card not saved: "+e.message,4000); } }
+    await refresh(); renderEdit(s.id); toast("Name card saved", 2500);
   });
   if(pick) pick.onclick=()=>pickPhoto(async(files)=>{
     for(const f of files){ try{ await addPhoto(s.id, f, "namecard"); }
-      catch(e){ toast("名片保存失败："+e.message,4000); } }
+      catch(e){ toast("Name card not saved: "+e.message,4000); } }
     await refresh(); renderEdit(s.id);
   }, true);
 }
@@ -1710,33 +1751,33 @@ function hlPhotos(hid){
 }
 function highlightsBlock(s){
   const list=s.highlights||[];
-  let h=`<div class="sec">亮点产品</div>`;
-  h+=`<div class="card"><button class="btn btn-accent" id="hlAdd" style="margin-bottom:10px">＋ 添加亮点产品</button>
-    <div class="tiny muted">现场看到有意思的单品就记一条：先拍照，再补一句为什么值得记。每条不限照片张数。</div></div>`;
+  let h=`<div class="sec">Highlight products</div>`;
+  h+=`<div class="card"><button class="btn btn-accent" id="hlAdd" style="margin-bottom:10px">＋ Add highlight product</button>
+    <div class="tiny muted">Record anything worth remembering: shoot it first, then say why it stands out. Any number of photos per entry.</div></div>`;
   for(const it of list){
     const ph=hlPhotos(it.id);
     h+=`<div class="card" data-h="${it.id}">
       <div class="btn-row" style="margin-bottom:8px">
-        <input type="text" data-ht="${it.id}" value="${esc(it.title||"")}" placeholder="产品名 / 型号" style="flex:1">
-        <button class="btn btn-danger btn-sm" data-hdel="${it.id}" aria-label="删除这条亮点">✕</button>
+        <input type="text" data-ht="${it.id}" value="${esc(it.title||"")}" placeholder="Product / model" style="flex:1">
+        <button class="btn btn-danger btn-sm" data-hdel="${it.id}" aria-label="Delete this highlight">✕</button>
       </div>
       <div class="field" style="margin-bottom:8px">
-        <textarea data-hnote="${it.id}" style="min-height:88px" placeholder="亮点说明：材质、工艺、关键尺寸、与同类相比强在哪……">${esc(it.note||"")}</textarea>
+        <textarea data-hnote="${it.id}" style="min-height:88px" placeholder="Why it stands out: material, process, key dimensions, how it beats the alternatives...">${esc(it.note||"")}</textarea>
       </div>`;
     if(ph.length){
       const urls=[], blobs=[];
       h+=`<div class="photos hlph">`+ph.map((p,i)=>{
         const u=URL.createObjectURL(p.thumbBlob||p.blob); urls.push(u); blobs.push(p.blob);
         return `<div class="ph"><img src="${u}" alt="">
-          <button class="imgbtn" data-hpi="${it.id}:${i}" aria-label="放大查看"></button>
-          <button class="x" data-hpd="${p.id}" aria-label="删除照片">✕</button></div>`;
+          <button class="imgbtn" data-hpi="${it.id}:${i}" aria-label="Open full size"></button>
+          <button class="x" data-hpd="${p.id}" aria-label="Delete photo">✕</button></div>`;
       }).join("")+`</div>`;
       setTimeout(()=>urls.forEach(u=>URL.revokeObjectURL(u)), 60000);
       setTimeout(()=>hl_place(it.id, blobs), 0);
     }
     h+=`<div class="btn-row">
-      <button class="btn btn-sm" data-hcam="${it.id}" style="flex:1">📷 拍照</button>
-      <button class="btn btn-sm" data-hpick="${it.id}" style="flex:1">🖼 相册（可多选）</button>
+      <button class="btn btn-sm" data-hcam="${it.id}" style="flex:1">📷 Camera</button>
+      <button class="btn btn-sm" data-hpick="${it.id}" style="flex:1">🖼 Gallery (multi-select)</button>
     </div></div>`;
   }
   return h;
@@ -1762,10 +1803,10 @@ function bindHighlights(s){
   $$("#editForm [data-hdel]").forEach(b=>b.onclick=async()=>{
     const hid=b.dataset.hdel;
     const it=(s.highlights||[]).find(x=>x.id===hid);
-    if(it && (it.title||it.note) && !confirm("删除这条亮点产品及其照片？")) return;
+    if(it && (it.title||it.note) && !confirm("Delete this highlight product and its photos?")) return;
     for(const p of hlPhotos(hid)){ await del("photos", p.id); s.photoIds=(s.photoIds||[]).filter(x=>x!==p.id); }
     s.highlights=(s.highlights||[]).filter(x=>x.id!==hid);
-    await save(s); await refresh(); renderEdit(s.id); toast("已删除亮点产品");
+    await save(s); await refresh(); renderEdit(s.id); toast("Highlight product deleted");
   });
   const add=$("#hlAdd");
   if(add) add.onclick=async()=>{
@@ -1775,12 +1816,12 @@ function bindHighlights(s){
   };
   $$("#editForm [data-hcam]").forEach(b=>b.onclick=()=>pickPhoto(async(files)=>{
     for(const f of files){ try{ await addPhoto(s.id, f, "highlight", {gallery:true, highlightId:b.dataset.hcam}); }
-      catch(e){ toast("照片保存失败："+e.message,4000); } }
+      catch(e){ toast("Photo not saved: "+e.message,4000); } }
     await refresh(); renderEdit(s.id);
   }));
   $$("#editForm [data-hpick]").forEach(b=>b.onclick=()=>pickPhoto(async(files)=>{
     for(const f of files){ try{ await addPhoto(s.id, f, "highlight", {highlightId:b.dataset.hpick}); }
-      catch(e){ toast("照片保存失败："+e.message,4000); } }
+      catch(e){ toast("Photo not saved: "+e.message,4000); } }
     await refresh(); renderEdit(s.id);
   }, true));
   $$("#editForm [data-hpd]").forEach(b=>b.onclick=async()=>{
@@ -1806,8 +1847,10 @@ function renderField(s, it){
     </div></div>`;
   }
   if(it.type==="select"){
+    /* 旧记录存过中文值（"A区"、"Sales 销售"），先换算再比对，否则选项会静默滑到第一项 */
+    const cur = valueEn(v);
     return `<div class="field">${lab}<select data-k="${it.k}">
-      ${it.opts.map(o=>`<option value="${esc(o)}" ${v===o?"selected":""}>${esc(o||"—")}</option>`).join("")}
+      ${it.opts.map(o=>`<option value="${esc(o)}" ${cur===o?"selected":""}>${esc(o||"—")}</option>`).join("")}
     </select></div>`;
   }
   if(it.type==="textarea") return `<div class="field">${lab}<textarea data-k="${it.k}">${esc(v||"")}</textarea></div>`;
@@ -1892,11 +1935,11 @@ function openLightbox(items, start){
   if(!FRLB){
     const d=document.createElement("div"); d.id="frlb";
     d.innerHTML="<div class='stage' id='frlbStage'><img id='frlbImg' alt=''></div>"
-      +"<button class='lbbtn lbclose' id='frlbClose' aria-label='关闭'>✕</button>"
-      +"<button class='lbbtn lbprev' id='frlbPrev' aria-label='上一张'>‹</button>"
-      +"<button class='lbbtn lbnext' id='frlbNext' aria-label='下一张'>›</button>"
+      +"<button class='lbbtn lbclose' id='frlbClose' aria-label='Close'>✕</button>"
+      +"<button class='lbbtn lbprev' id='frlbPrev' aria-label='Previous'>‹</button>"
+      +"<button class='lbbtn lbnext' id='frlbNext' aria-label='Next'>›</button>"
       +"<div class='lbcnt' id='frlbCnt'></div>"
-      +"<div class='lbhint'>点空白关闭 · 双击放大 · 左右滑动切换</div>";
+    +"<div class='lbhint'>Tap the background to close · double tap to zoom · swipe to switch</div>";
     document.body.appendChild(d);
     const im=d.querySelector("#frlbImg"), st=d.querySelector("#frlbStage"), cnt=d.querySelector("#frlbCnt");
     let list0=[], idx=0, lastTap=0, sx=0, sy=0, moved=false, swiping=false, curUrl=null;
@@ -1910,7 +1953,7 @@ function openLightbox(items, start){
       d.classList.remove("zoomed");
       cnt.textContent=(idx+1)+" / "+list0.length;
     };
-    im.onerror=()=>{ toast("这张照片没能打开，可能已损坏", 3000); };
+    im.onerror=()=>{ toast("This photo could not be opened — the file may be damaged", 3000); };
     const doClose=()=>{ d.classList.remove("on"); d.classList.remove("zoomed"); release(); };
     FRLB={ el:d, setList:(a)=>{ list0=a; }, show:(i)=>show(i),
       open:(i)=>{ show(i); d.classList.add("on"); }, close:doClose };
@@ -1958,10 +2001,10 @@ function renderPhotos(s){
     const u=URL.createObjectURL(p.thumbBlob||p.blob); urls.push(u);
     blobs.push(p.blob);          /* 放大时现用现建 URL，别提前 revoke（见 openLightbox） */
     return `<div class="ph"><img src="${u}" alt="">
-      <button class="imgbtn" data-i="${i}" aria-label="放大查看"></button>
+      <button class="imgbtn" data-i="${i}" aria-label="Open full size"></button>
       <div class="t">${labelOf(PHOTO_TYPES,p.type)}</div>
-      <button class="g" data-g="${p.id}" aria-label="存入系统相册" title="存入系统相册">⬇</button>
-      <button class="x" data-p="${p.id}" aria-label="删除照片">✕</button></div>`;
+      <button class="g" data-g="${p.id}" aria-label="Save to camera roll" title="Save to camera roll">⬇</button>
+      <button class="x" data-p="${p.id}" aria-label="Delete photo">✕</button></div>`;
   }).join("") + `<div class="ph add" id="phAdd">＋</div>`;
   const box=$("#editPhotos"); box.innerHTML=html;
   box.querySelectorAll(".imgbtn").forEach(b=>{
@@ -1977,8 +2020,8 @@ function renderPhotos(s){
     const p=photosOf(s.id).find(x=>x.id===b.dataset.g);
     if(!p) return;
     const r=await saveToGallery(p.blob, galleryPrefix(s.id));
-    if(r==="saved") toast("已存入系统相册", 3000);
-    else if(r==="failed") toast("这台设备不支持自动存相册，可长按图片保存", 4000);
+    if(r==="saved") toast("Saved to the camera roll", 3000);
+    else if(r==="failed") toast("This device cannot save to the camera roll automatically — long-press the image to save", 4000);
   });
   box.querySelectorAll(".x").forEach(b=>b.onclick=async()=>{
     const pid=b.dataset.p;
@@ -1989,14 +2032,14 @@ function renderPhotos(s){
     await refresh(); renderPhotos(SUPPLIERS.find(x=>x.id===s.id)||s);
   });
   $("#phAdd").onclick=()=>pickPhoto(async(files)=>{
-    for(const f of files){ try{ await addPhoto(s.id, f, "product"); }catch(e){ toast("照片保存失败："+e.message,4000); } }
+    for(const f of files){ try{ await addPhoto(s.id, f, "product"); }catch(e){ toast("Photo not saved: "+e.message,4000); } }
     await refresh(); renderPhotos(SUPPLIERS.find(x=>x.id===s.id)||s); renderEdit(s.id);
   }, true);
   setTimeout(()=>{ urls.forEach(u=>URL.revokeObjectURL(u)); }, 60000);
 }
 $("#btnDone").onclick=async()=>{
   const s=SUPPLIERS.find(x=>x.id===CUR);
-  if(s && stateOf(s)==="draft") toast("仍是草稿：缺 "+missing(s).join("、"), 3000);
+  if(s && stateOf(s)==="draft") toast("Still a draft — missing "+missing(s).join(", "), 3000);
   go("list"); renderList();
 };
 /* 连续录入：现场最常用的是「拍完这家紧接着下一家」，不用退回主屏再点 */
@@ -2016,20 +2059,20 @@ $("#btnNextManual").onclick=async()=>{
 };
 $("#btnDelete").onclick=async()=>{
   const s=SUPPLIERS.find(x=>x.id===CUR); if(!s) return;
-  if(!confirm("删除「"+(s.companyNameZh||s.companyNameEn||"未命名")+"」？删除后 10 秒内可撤销。")) return;
+  if(!confirm("Delete \""+(s.companyNameZh||s.companyNameEn||"untitled")+"\"? You can undo for 10 seconds.")) return;
   const backup=JSON.parse(JSON.stringify({...s, photoIds:(s.photoIds||[]).slice()}));
   /* 照片跟着一起下线，否则「本机 N 张照片」会大于报告里真的出现的数量 */
   const myPhotos=(await all("photos")).filter(p=>!p.deletedAt
     && (p.supplierId===s.id || (s.photoIds||[]).includes(p.id)));
   for(const p of myPhotos){ p.deletedAt=now(); await put("photos", p); }
   s.deletedAt=now(); await put("suppliers", touch(s)); await refresh();
-  toast("已删除", 10000);
+  toast("Deleted", 10000);
   const btn=document.createElement("div");
   // 简易撤销：10 秒内点首页横幅恢复
   const undo=async()=>{
     backup.deletedAt=null; await put("suppliers", touch(backup));
     for(const p of myPhotos){ p.deletedAt=null; await put("photos", p); }
-    await refresh(); toast("已恢复");
+    await refresh(); toast("Restored");
   };
   window.__undo=undo;
   setTimeout(()=>{ if(window.__undo===undo) window.__undo=null; }, 10000);
@@ -2039,26 +2082,26 @@ $("#btnDelete").onclick=async()=>{
 /* ============================ 预拜访清单 ============================ */
 async function renderPlans(){
   await refresh();
-  $("#pfPrio").innerHTML=["A","B","C"].map(p=>`<button class="chip" data-v="${p}" aria-pressed="${p==="B"}">${p} 级</button>`).join("");
+  $("#pfPrio").innerHTML=["A","B","C"].map(p=>`<button class="chip" data-v="${p}" aria-pressed="${p==="B"}">Priority ${p}</button>`).join("");
   let sel="B";
   $$("#pfPrio .chip").forEach(b=>b.onclick=()=>{ sel=b.dataset.v;
     $$("#pfPrio .chip").forEach(x=>x.setAttribute("aria-pressed", String(x===b))); });
   $("#pfSave").onclick=async()=>{
     const name=$("#pfName").value.trim();
-    if(!name){ toast("公司名必填"); return; }
+    if(!name){ toast("Company name is required"); return; }
     const p={ id:uid(), fairId:curFairId(), companyName:name, boothNo:normBooth($("#pfBooth").value), goal:$("#pfGoal").value.trim(),
       priority:sel, note:$("#pfNote").value.trim(), status:"planned", supplierId:null,
       companyKey:normCompany(name), createdAt:now(), updatedAt:now(), deletedAt:null };
     await put("visitPlans", p); await refresh();
     $("#pfName").value=$("#pfBooth").value=$("#pfGoal").value=$("#pfNote").value="";
-    $("#planForm").classList.add("hide"); toast("已加入清单"); renderPlans();
+    $("#planForm").classList.add("hide"); toast("Added to the plan"); renderPlans();
   };
   const order={A:0,B:1,C:2};
   const items=PLANS.slice().sort((a,b)=>(order[a.priority]-order[b.priority]) || String(a.boothNo).localeCompare(String(b.boothNo)));
-  if(!items.length){ $("#planBody").innerHTML=`<div class="empty">清单是空的<br><span class="tiny">把已知要拜访的厂家先补进来，现场可一键转记录</span></div>`; return; }
+  if(!items.length){ $("#planBody").innerHTML=`<div class="empty">The plan is empty<br><span class="tiny">Add the factories you already know about; on site they turn into records in one tap</span></div>`; return; }
   $("#planBody").innerHTML=items.map(p=>{
-    const st = p.status==="visited" ? `<span class="badge b-complete">已到访</span>`
-      : p.status==="skipped" ? `<span class="badge b-draft">跳过</span>` : `<span class="badge b-plan">${p.priority} 级</span>`;
+    const st = p.status==="visited" ? `<span class="badge b-complete">Visited</span>`
+      : p.status==="skipped" ? `<span class="badge b-draft">Skipped</span>` : `<span class="badge b-plan">Priority ${p.priority}</span>`;
     return `<div class="item plan-item" data-p="${p.id}">
       <div class="body">
         <div class="nm">${esc(p.companyName)}</div>
@@ -2066,11 +2109,11 @@ async function renderPlans(){
         <div style="margin-top:5px">${st}</div>
       </div>
       <div class="acts">
-        ${p.status==="planned"?`<button class="btn btn-sm btn-accent" data-a="arrive">到访拍照</button>`:""}
-        ${p.status==="planned"?`<button class="btn btn-sm" data-a="skip">跳过</button>`:""}
-        ${p.status==="skipped"?`<button class="btn btn-sm btn-accent" data-a="resume">继续参观</button>`:""}
-        ${p.status==="visited"?`<button class="btn btn-sm" data-a="open">查看记录</button>`:""}
-        <button class="btn btn-sm btn-danger" data-a="del">🗑 删除</button>
+        ${p.status==="planned"?`<button class="btn btn-sm btn-accent" data-a="arrive">Visit &amp; shoot</button>`:""}
+        ${p.status==="planned"?`<button class="btn btn-sm" data-a="skip">Skip</button>`:""}
+        ${p.status==="skipped"?`<button class="btn btn-sm btn-accent" data-a="resume">Resume</button>`:""}
+        ${p.status==="visited"?`<button class="btn btn-sm" data-a="open">Open record</button>`:""}
+        <button class="btn btn-sm btn-danger" data-a="del">🗑 Delete</button>
       </div>
     </div>`;
   }).join("");
@@ -2086,26 +2129,26 @@ async function planAction(pid, act){
   const p=PLANS.find(x=>x.id===pid); if(!p) return;
   if(act==="skip"){ p.status="skipped"; p.updatedAt=now(); await put("visitPlans",p); await refresh(); renderPlans(); return; }
   /* 跳过之后还能改主意：退回 planned，重新出现「到访拍照」 */
-  if(act==="resume"){ p.status="planned"; p.updatedAt=now(); await put("visitPlans",p); await refresh(); renderPlans(); toast("已放回待参观"); return; }
+  if(act==="resume"){ p.status="planned"; p.updatedAt=now(); await put("visitPlans",p); await refresh(); renderPlans(); toast("Moved back to the plan"); return; }
   if(act==="open"){
     const sid=p.supplierId || (SUPPLIERS.find(s=>s.previsitId===p.id)||{}).id;
-    if(sid){ CUR=sid; go("edit",{title:p.companyName, sub:"预拜访记录", back:true}); renderEdit(sid); }
-    else toast("这条还没有对应记录", 2500);
+    if(sid){ CUR=sid; go("edit",{title:p.companyName, sub:"From the visit plan", back:true}); renderEdit(sid); }
+    else toast("No record for this entry yet", 2500);
     return;
   }
   if(act==="del"){
     const has=sidOfPlan(p);
-    if(!confirm("从预拜访清单删除「"+p.companyName+"」？"
-      + (has?"\n（已录入的厂家记录不会删除）":""))) return;
+    if(!confirm("Remove \""+p.companyName+"\" from the visit plan?"
+      + (has?"\n(The factory record you already saved is kept.)":""))) return;
     p.deletedAt=now(); p.updatedAt=now();
     await put("visitPlans", p); await refresh(); renderPlans();
-    toast("已从清单删除（其他设备同步后会一起删）", 3500);
+    toast("Removed from the plan (other devices follow on sync)", 3500);
     return;
   }
   // 到达并拍照：先查重
   const dup=SUPPLIERS.find(s=>s.companyKey===p.companyKey && s.boothKey===normBooth(p.boothNo));
   if(dup){
-    if(confirm("「"+p.companyName+"」已有记录，要打开它吗？（取消＝仍然新建）")){
+    if(confirm("\""+p.companyName+"\" already has a record. Open it? (Cancel = create a new one)")){
       CUR=dup.id; go("edit"); renderEdit(CUR); return;
     }
   }
@@ -2113,19 +2156,19 @@ async function planAction(pid, act){
   pickPhoto(async(files)=>{
     const s=newSupplier({ source:"planned", previsitId:p.id, companyNameZh:p.companyName,
       boothNo:p.boothNo, hall:fairHall(), area:fairArea() });
-    if(p.goal) s.notes="拜访目的："+p.goal;
+    if(p.goal) s.intent=p.goal;   /* v1.9: 意向单独存，不再覆盖备注 */
     await put("suppliers", s);
     try{
       await addPhoto(s.id, files[0], "booth", {gallery:true});
     }catch(e){
       await del("suppliers", s.id);
-      toast("照片没保存成功，厂家仍留在预拜访清单里", 4000);
+      toast("Photo not saved; the factory stays in the visit plan", 4000);
       await refresh(); renderPlans(); PENDING_PLAN=null; return;
     }
     p.status="visited"; p.supplierId=s.id; p.updatedAt=now();
     await put("visitPlans", p);
     await refresh(); CUR=s.id; PENDING_PLAN=null;
-    go("edit",{title:p.companyName, sub:"已标记到访，补齐资料", back:true}); renderEdit(s.id);
+    go("edit",{title:p.companyName, sub:"Marked as visited — fill in the details", back:true}); renderEdit(s.id);
   });
 }
 $("#btnAddPlan").onclick=()=>$("#planForm").classList.toggle("hide");
@@ -2134,9 +2177,9 @@ $("#pfCancel").onclick=()=>$("#planForm").classList.add("hide");
 /* ============================ 导出 / 导入 ============================ */
 async function renderExport(){
   await refresh();
-  $("#exLast").textContent = SETTINGS.lastExportAt ? new Date(SETTINGS.lastExportAt).toLocaleString("zh-CN") : "从未";
+  $("#exLast").textContent = SETTINGS.lastExportAt ? new Date(SETTINGS.lastExportAt).toLocaleString("en-GB") : "Never";
   const today=new Date(); today.setHours(0,0,0,0);
-  $("#exCount").textContent = (FAIR?(FAIR.name||FAIR.nameEn)+"：":"") + SUPPLIERS.length + " 条 / " + PHOTOS.length + " 张照片";
+  $("#exCount").textContent = (FAIR?(FAIR.name||FAIR.nameEn)+": ":"") + SUPPLIERS.length + " records / " + PHOTOS.length + " photos";
   try{
     const est=await navigator.storage.estimate();
     if(est && est.quota){
@@ -2144,8 +2187,8 @@ async function renderExport(){
       $("#exQuota").textContent = (used/1048576).toFixed(0)+" MB / "+(est.quota/1048576).toFixed(0)+" MB ("+pct+"%)";
       $("#exBar").style.width=pct+"%";
       $("#exBar").style.background = pct>70 ? "var(--warn)" : "var(--accent)";
-    } else { $("#exQuota").textContent="不可用"; }
-  }catch(e){ $("#exQuota").textContent="不可用"; }
+    } else { $("#exQuota").textContent="Unavailable"; }
+  }catch(e){ $("#exQuota").textContent="Unavailable"; }
   $("#exResult").classList.add("hide");
 }
 async function buildBundle(mode){
@@ -2161,7 +2204,7 @@ async function buildBundle(mode){
   const planTombs = await all("visitPlans").then(a=>a.filter(p=>p.deletedAt && (mode!=="today" || new Date(p.deletedAt)>=cutoff)));
   const ids = new Set(sup.map(s=>s.id));
   const photos = PHOTOS.filter(p=>ids.has(p.supplierId));
-  const f=FAIR || newFair({name:"（未命名展会）"});
+  const f=FAIR || newFair({name:"(untitled fair)"});
   const bundle={
     schemaVersion:SCHEMA_VERSION,
     export:{ id:uid(), deviceId:SETTINGS.deviceId, createdAt:now(), mode,
@@ -2184,9 +2227,9 @@ async function buildBundle(mode){
 }
 async function doExport(mode){
   try{
-    toast("正在打包…", 8000);
+    toast("Packing...", 8000);
     const {bundle, photos} = await buildBundle(mode);
-    if(typeof JSZip==="undefined") throw new Error("JSZip 未加载，请检查 vendor/jszip.min.js");
+    if(typeof JSZip==="undefined") throw new Error("JSZip is not loaded — check vendor/jszip.min.js");
     const zip=new JSZip();
     zip.file("suppliers.json", JSON.stringify(bundle), {compression:"DEFLATE"});
     for(const p of photos){
@@ -2212,13 +2255,13 @@ async function doExport(mode){
     SETTINGS.lastExportAt=now(); await setKV("lastExportAt", SETTINGS.lastExportAt);
     const mb=(blob.size/1048576).toFixed(1);
     $("#exResult").classList.remove("hide");
-    $("#exResult").innerHTML=`<b>已导出 ${esc(name)}</b>
-      <div class="kv"><span class="k">大小</span><span class="v">${mb} MB</span></div>
-      <div class="kv"><span class="k">记录 / 照片</span><span class="v">${bundle.export.counts.suppliers} 条 / ${bundle.export.counts.photos} 张</span></div>
-      <div class="tiny muted" style="margin-top:8px">iPhone 请在分享面板选「存储到文件」，并另外发一份到微信文件传输助手。</div>`;
-    toast("导出完成 "+mb+" MB", 4000);
+    $("#exResult").innerHTML=`<b>Exported ${esc(name)}</b>
+      <div class="kv"><span class="k">Size</span><span class="v">${mb} MB</span></div>
+      <div class="kv"><span class="k">Records / photos</span><span class="v">${bundle.export.counts.suppliers} / ${bundle.export.counts.photos}</span></div>
+      <div class="tiny muted" style="margin-top:8px">On iPhone pick Save to Files in the share sheet and send a second copy to yourself.</div>`;
+    toast("Export finished, "+mb+" MB", 4000);
   }catch(e){
-    console.error(e); toast("导出失败："+e.message, 6000);
+    console.error(e); toast("Export failed: "+e.message, 6000);
   }
 }
 $("#btnFull").onclick=()=>doExport("full");
@@ -2228,10 +2271,10 @@ $("#fileImport").onchange=async(e)=>{
   const f=e.target.files[0]; e.target.value="";
   if(!f) return;
   try{
-    toast("正在导入…", 8000);
+    toast("Importing...", 8000);
     const zip=await JSZip.loadAsync(f);
     const jf=zip.file("suppliers.json");
-    if(!jf) throw new Error("ZIP 里没有 suppliers.json");
+    if(!jf) throw new Error("No suppliers.json in this ZIP");
     const data=JSON.parse(await jf.async("string"));
     let nf=0;
     if(data.fair && data.fair.id){
@@ -2265,9 +2308,9 @@ $("#fileImport").onchange=async(e)=>{
     if(data.export && data.export.weights) { SETTINGS.weights=data.export.weights; await setKV("weights", SETTINGS.weights); }
     await refresh();
     if(!FAIR && data.fair && data.fair.id){ await selectFair(data.fair.id); }
-    toast(`导入完成：展会 ${nf} / 记录 ${ns} / 计划 ${nv} / 照片 ${np}`, 5000);
+    toast(`Import finished: ${nf} fairs / ${ns} records / ${nv} planned / ${np} photos`, 5000);
     renderExport();
-  }catch(err){ console.error(err); toast("导入失败："+err.message, 6000); }
+  }catch(err){ console.error(err); toast("Import failed: "+err.message, 6000); }
 };
 
 /* ============================ 报告 ============================ */
@@ -2298,8 +2341,8 @@ async function renderReport(){
 
   const nFairs=(await all("fairs")).filter(f=>!f.deletedAt).length;
   $("#rpScopeHint").textContent = RP.scope==="all"
-    ? `把全部 ${nFairs} 个展会合成一份报告（展会名以最新一届为封面）`
-    : (FAIR ? "只统计当前展会："+(FAIR.nameEn||FAIR.name) : "未选择展会，请先到「展会」里选一个");
+    ? `Merge all ${nFairs} fairs into one report (the latest fair is used on the cover)`
+    : (FAIR ? "This fair only: "+(FAIR.nameEn||FAIR.name) : "No fair selected — pick one under Fairs first");
 
   /* 概览：先按轻量口径统计，不读照片 */
   const ctx = await window.FRReport.buildContext({
@@ -2310,9 +2353,9 @@ async function renderReport(){
   const drafts=ctx.suppliers.filter(s=>s._state==="draft").length;
   const photoN=(await all("photos")).filter(p=>ctx.fairs.some(f=>f.id===p.fairId)).length;
   $("#rpSummary").innerHTML =
-    `<div class="kv"><span class="k">记录</span><span class="v">${ctx.suppliers.length} 家（已评分 ${rated} / 草稿 ${drafts}）</span></div>`
-    + `<div class="kv"><span class="k">照片</span><span class="v">${photoN} 张${RP.photo?"（报告内嵌，文件会变大）":"（不含）"}</span></div>`
-    + `<div class="kv"><span class="k">预拜访未到访</span><span class="v">${ctx.plans.filter(p=>p.status!=="visited").length} 家</span></div>`;
+    `<div class="kv"><span class="k">Records</span><span class="v">${ctx.suppliers.length} (rated ${rated} / draft ${drafts})</span></div>`
+    + `<div class="kv"><span class="k">Photos</span><span class="v">${photoN}${RP.photo?" (embedded, larger file)":" (excluded)"}</span></div>`
+    + `<div class="kv"><span class="k">Planned, not visited</span><span class="v">${ctx.plans.filter(p=>p.status!=="visited").length}</span></div>`;
 }
 async function rpContext(){
   return await window.FRReport.buildContext({
@@ -2325,43 +2368,43 @@ function rpResult(html){
 }
 $("#btnRpHtml").onclick=async()=>{
   try{
-    toast("正在生成 HTML…", 12000);
+    toast("Building HTML...", 12000);
     const ctx=await rpContext();
     const html=window.FRReport.renderHTML(ctx);
     const name=window.FRReport.fileName(ctx,"html");
     const blob=new Blob([html],{type:"text/html"});
     const shared=await window.FRReport.share(blob, name, "text/html");
-    rpResult(`<b>已生成 ${esc(name)}</b>
-      <div class="kv"><span class="k">大小</span><span class="v">${(blob.size/1048576).toFixed(2)} MB</span></div>
-      <div class="kv"><span class="k">记录</span><span class="v">${ctx.suppliers.length} 家</span></div>
-      <div class="tiny muted" style="margin-top:8px">${shared?"":"已触发下载。"}想要 PDF：用浏览器打开这个文件，点右上角 <b>Print / Save as PDF</b> 即可存成 PDF。</div>`);
-  }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
+    rpResult(`<b>Created ${esc(name)}</b>
+      <div class="kv"><span class="k">Size</span><span class="v">${(blob.size/1048576).toFixed(2)} MB</span></div>
+      <div class="kv"><span class="k">Records</span><span class="v">${ctx.suppliers.length}</span></div>
+      <div class="tiny muted" style="margin-top:8px">${shared?"":"Download started. "}For a PDF, open this file in a browser and use <b>Print / Save as PDF</b>.</div>`);
+  }catch(err){ console.error(err); toast("Generation failed: "+err.message, 6000); }
 };
 $("#btnRpDocx").onclick=async()=>{
   try{
-    toast("正在生成 DOCX…", 20000);
+    toast("Building DOCX...", 20000);
     const ctx=await rpContext();
     const blob=await window.FRReport.toDOCX(ctx);
     const name=window.FRReport.fileName(ctx,"docx");
     const shared=await window.FRReport.share(blob, name,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    rpResult(`<b>已生成 ${esc(name)}</b>
-      <div class="kv"><span class="k">大小</span><span class="v">${(blob.size/1048576).toFixed(2)} MB</span></div>
-      <div class="kv"><span class="k">记录 / 照片</span><span class="v">${ctx.suppliers.length} 家</span></div>
-      <div class="tiny muted" style="margin-top:8px">${shared?"":"已触发下载。"}Word / WPS / Pages 可直接打开继续编辑，照片已内嵌。</div>`);
-  }catch(err){ console.error(err); toast("DOCX 生成失败："+err.message, 8000); }
+    rpResult(`<b>Created ${esc(name)}</b>
+      <div class="kv"><span class="k">Size</span><span class="v">${(blob.size/1048576).toFixed(2)} MB</span></div>
+      <div class="kv"><span class="k">Records / photos</span><span class="v">${ctx.suppliers.length}</span></div>
+      <div class="tiny muted" style="margin-top:8px">${shared?"":"Download started. "}Opens in Word / WPS / Pages for further editing; photos are embedded.</div>`);
+  }catch(err){ console.error(err); toast("DOCX failed: "+err.message, 8000); }
 };
 $("#btnRpXlsx").onclick=async()=>{
   try{
-    toast("正在生成 Excel…", 10000);
+    toast("Building Excel...", 10000);
     const ctx=await rpContext();
     const blob=await window.FRReport.toXLSX(ctx);
     const name=window.FRReport.fileName(ctx,"xlsx");
     await window.FRReport.share(blob, name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    rpResult(`<b>已生成 ${esc(name)}</b>
-      <div class="kv"><span class="k">工作表</span><span class="v">Supplier Master · Category Comparison</span></div>
-      <div class="tiny muted" style="margin-top:8px">Excel / Numbers / WPS 可直接打开。</div>`);
-  }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
+    rpResult(`<b>Created ${esc(name)}</b>
+      <div class="kv"><span class="k">Sheets</span><span class="v">Factory Master · Category Comparison</span></div>
+      <div class="tiny muted" style="margin-top:8px">Opens in Excel / Numbers / WPS.</div>`);
+  }catch(err){ console.error(err); toast("Generation failed: "+err.message, 6000); }
 };
 $("#btnRpCsv").onclick=async()=>{
   try{
@@ -2369,15 +2412,15 @@ $("#btnRpCsv").onclick=async()=>{
     const csv=window.FRReport.toCSV(ctx,"master");
     const name=window.FRReport.fileName(ctx,"csv");
     await window.FRReport.share(new Blob([csv],{type:"text/csv"}), name, "text/csv");
-    rpResult(`<b>已生成 ${esc(name)}</b>
-      <div class="tiny muted" style="margin-top:8px">带 UTF-8 BOM，Excel 双击直接打开不乱码。</div>`);
-  }catch(err){ console.error(err); toast("生成失败："+err.message, 6000); }
+    rpResult(`<b>Created ${esc(name)}</b>
+      <div class="tiny muted" style="margin-top:8px">UTF-8 with BOM, so a double tap in Excel shows no mojibake.</div>`);
+  }catch(err){ console.error(err); toast("Generation failed: "+err.message, 6000); }
 };
 
 /* ============================ 设置 ============================ */
 async function renderSettings(){
   await refresh();
-  $("#setFairName").textContent = FAIR ? (FAIR.name||FAIR.nameEn||"（未命名）") : "未选择";
+  $("#setFairName").textContent = FAIR ? (FAIR.name||FAIR.nameEn||"(untitled)") : "None";
   $("#setFairDates").textContent = FAIR ? ([FAIR.startDate,FAIR.endDate].filter(Boolean).join(" → ")||"—") : "—";
   $("#setHall").innerHTML=HALLS.map(h=>`<option value="${esc(h)}" ${SETTINGS.defaultHall===h?"selected":""}>${esc(h)}</option>`).join("");
   $("#setHall").onchange=async()=>{ SETTINGS.defaultHall=$("#setHall").value; await setKV("defaultHall", SETTINGS.defaultHall); };
@@ -2388,16 +2431,16 @@ async function renderSettings(){
       SETTINGS.saveToGallery = b.dataset.v!=="off";
       await setKV("saveToGallery", SETTINGS.saveToGallery);
       $$("#setGallery .chip").forEach(x=>x.setAttribute("aria-pressed", String(x===b)));
-      toast(SETTINGS.saveToGallery ? "拍照后会自动存入系统相册" : "已关闭自动存相册，仍可点 ⬇ 手动保存", 3000);
+      toast(SETTINGS.saveToGallery ? "Camera shots are copied to the camera roll" : "Auto-save is off — tap ⬇ to save manually", 3000);
     };
   });
   const sumTxt=(FAIR && (FAIR.summary||"").trim()) ? String(FAIR.summary).trim() : "";
   $("#setSummaryTxt").innerHTML = sumTxt
     ? `<div style="font-size:14px;line-height:1.7;white-space:pre-wrap">${esc(sumTxt)}</div>`
-    : (FAIR ? "尚未填写。" : "请先选择展会。");
+    : (FAIR ? "Not filled in yet." : "Pick a fair first.");
   const w=SETTINGS.weights;
   $("#setWeights").innerHTML=SCORE_DIMS.map(d=>`<div class="score-row">
-      <span class="lbl">${d[1]}<div class="tiny muted">${d[2]}</div></span>
+      <span class="lbl">${d[2]}${d[1]===d[2]?"":"<div class=\"tiny muted\">"+esc(d[1])+"</div>"}</span>
       <input type="number" inputmode="numeric" data-w="${d[0]}" value="${w[d[0]]}" style="width:96px;min-height:46px">
       <span class="w">%</span>
     </div>`).join("") + `<div class="tiny muted" id="wSum"></div>`;
@@ -2410,25 +2453,25 @@ async function renderSettings(){
   const upd=()=>{
     let sum=0; $$("#setWeights input").forEach(i=>sum+=Number(i.value)||0);
     const el=$("#wSum");
-    el.textContent="当前合计 "+sum+"% （须为 100%）";
+    el.textContent="Total "+sum+"% (must be 100%)";
     el.style.color = sum===100 ? "var(--accent)" : "var(--danger)";
   };
   $$("#setWPreset .chip").forEach(b=>{
     b.onclick=()=>{
       const p=W_PRESETS[b.dataset.w]; if(!p) return;
       $$("#setWeights input").forEach(i=>{ if(p[i.dataset.w]!=null) i.value=p[i.dataset.w]; });
-      upd(); toast("已套用「"+b.textContent+"」，请点保存");
+      upd(); toast("Applied \""+b.textContent+"\" — tap Save");
     };
   });
   $$("#setWeights input").forEach(i=>i.oninput=upd); upd();
   $("#btnSaveW").onclick=async()=>{
     let sum=0; const nw={};
     $$("#setWeights input").forEach(i=>{ const v=Number(i.value)||0; nw[i.dataset.w]=v; sum+=v; });
-    if(sum!==100){ toast("权重合计必须是 100%，当前 "+sum+"%", 4000); return; }
-    SETTINGS.weights=nw; await setKV("weights", nw); toast("已保存"); renderSettings();
+    if(sum!==100){ toast("Weights must add up to 100%, currently "+sum+"%", 4000); return; }
+    SETTINGS.weights=nw; await setKV("weights", nw); toast("Saved"); renderSettings();
   };
   $("#btnResetW").onclick=async()=>{ SETTINGS.weights=Object.assign({},DEFAULT_WEIGHTS); await setKV("weights", SETTINGS.weights); renderSettings(); };
-  $("#aboutVer").textContent="版本 "+APP_VERSION+" · 数据模式 schema v"+SCHEMA_VERSION+" · 设备号 "+String(SETTINGS.deviceId).slice(0,8);
+  $("#aboutVer").textContent="Version "+APP_VERSION+" · schema v"+SCHEMA_VERSION+" · device "+String(SETTINGS.deviceId).slice(0,8);
 }
 
 /* ============================ 对外桥接（供 sync.js 使用） ============================ */
@@ -2485,7 +2528,7 @@ async function autoSyncTick(force){
     _autoBusy=true;
     try{
       const r=await window.FRSync.push(cfg.scope||"meta");
-      if(r && r.files) toast("已自动备份 "+r.files+" 个文件", 3000);
+      if(r && r.files) toast("Auto backup wrote "+r.files+" file(s)", 3000);
     }finally{ _autoBusy=false; }
     if(typeof renderFairCard==="function") renderFairCard();
   }catch(e){
@@ -2518,7 +2561,7 @@ window.FRAutoSync={tick:autoSyncTick, start:startAutoTimer};
       navigator.serviceWorker.register("sw.js").catch(()=>{});
     }
   }catch(e){
-    document.body.innerHTML='<div class="wrap"><div class="empty">启动失败：'+esc(e.message)+'</div></div>';
+    document.body.innerHTML='<div class="wrap"><div class="empty">Startup failed: '+esc(e.message)+'</div></div>';
   }
 })();
 </script>

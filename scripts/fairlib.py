@@ -20,6 +20,7 @@ SCHEMA_VERSION = 2
 CATEGORIES = [
     ("shower_enclosure", "淋浴房整体", "Shower Enclosure"),
     ("smart_toilet", "智能马桶", "Smart Toilet"),
+    ("floor_toilet", "普通马桶", "Floor-Standing Toilet"),
     ("tempered_glass", "钢化玻璃", "Tempered Glass"),
     ("aluminium_profile", "铝型材", "Aluminium Profile"),
     ("hardware", "五金配件", "Hardware & Fittings"),
@@ -104,14 +105,14 @@ def missing_fields(s: dict) -> list[str]:
     """Fields required before a record may leave draft state."""
     m = []
     if _blank(s.get("companyNameZh")) and _blank(s.get("companyNameEn")):
-        m.append("公司名 / company name")
+        m.append("company name")
     if _blank(s.get("contactName")):
-        m.append("联系人 / contact")
+        m.append("contact")
     # v1.7：联系方式不再是必填。现场很多摊位只留个姓名，硬填会造出假号码。
     if not s.get("categories"):
-        m.append("品类 / category")
+        m.append("category")
     if not s.get("photoIds"):
-        m.append("照片 / photo")
+        m.append("photo")
     return m
 
 

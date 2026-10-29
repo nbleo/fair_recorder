@@ -96,8 +96,8 @@ class TestState(unittest.TestCase):
 
     def test_missing_fields_listed(self):
         m = F.missing_fields(supplier(contactName="", phone="", wechat="", email="", categories=[]))
-        self.assertIn("联系人 / contact", m)
-        self.assertIn("品类 / category", m)
+        self.assertIn("contact", m)
+        self.assertIn("category", m)
 
 
 class TestMerge(unittest.TestCase):
