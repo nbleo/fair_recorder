@@ -209,14 +209,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   fs.writeFileSync(path.join(DOWNLOADS, "report.html"), html, "utf8");
 
-  check(/Factory Report — RPT Test Fair/.test(html), "HTML 封面标题正确");
-  check(/Prepared for: Schulte/.test(html), "HTML 封面含抬头 Prepared for");
+  check(/Fair Visiting Report — RPT Test Fair/.test(html), "HTML 封面标题正确");
+  check(/Report: Schulte/.test(html), "HTML 封面抬头为 Report: …");
   /* v1.7：只剩三章 —— Supplier List / Supplier Catalogue / Fair Summary */
   check(/1\. Factory List/.test(html), "HTML 含第 1 章 Factory List");
   check(/Factories recorded/.test(html), "Factory List 保留总数统计");
   /* v1.9：第 1 章不再是孤零零一个总数，要列出每家供应商 */
   check(/<table class='list'>/.test(html), "Factory List 含工厂明细表");
-  check(/Booth \/ Hall/.test(html) && /Categories/.test(html), "明细表含 Booth / Hall 与 Categories 列");
+  /* v2.1：清单表只剩 4 列。注意第 2 章的评分表里仍有 "Rating" 列名，
+     所以要截到第 1 章范围内判断，不能对整份 HTML 断言。 */
+  const ch1 = html.split("2. Factory Catalogue")[0];
+  check(/<th>Company<\/th>/.test(ch1) && /<th>Categories<\/th>/.test(ch1) && /<th>Contact<\/th>/.test(ch1)
+    && !/Booth \/ Hall/.test(ch1) && !/<th>Rating<\/th>/.test(ch1),
+    "明细表只剩 Company / Categories / Contact（Booth / Hall 与 Rating 已删）");
   const listRowsHtml = (html.match(/<tr><td>\d+<\/td>/g) || []).length;
   check(listRowsHtml === 2, "明细表逐家列出两家供应商（实际 " + listRowsHtml + " 行）");
   check(/Alpha Sanitary \(甲厂\)/.test(html.split("2. Factory Catalogue")[0]),
@@ -337,10 +342,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check(!/Scope &amp; Methodology/.test(docx.doc), "DOCX 已删除 Scope & Methodology");
   check(/Factories recorded/.test(docx.doc), "DOCX 保留总数统计");
   /* v1.9：DOCX 第 1 章同样是明细表，且与 HTML 同口径 */
-  check(/Booth \/ Hall/.test(docx.doc), "DOCX 明细表含 Booth / Hall 列");
+  check(!/Booth \/ Hall/.test(docx.doc), "DOCX 明细表已无 Booth / Hall 列");
   const firstTbl = docx.doc.split("<w:tbl>")[1] || "";
-  check((firstTbl.match(/<w:gridCol/g) || []).length === 6,
-    "DOCX 第 1 章表格为 6 列（实际 " + (firstTbl.match(/<w:gridCol/g) || []).length + " 列）");
+  check((firstTbl.match(/<w:gridCol/g) || []).length === 4,
+    "DOCX 第 1 章表格为 4 列（实际 " + (firstTbl.match(/<w:gridCol/g) || []).length + " 列）");
   check(/Alpha Sanitary/.test(firstTbl), "DOCX 明细表逐家列出供应商");
   check(/型材壁厚 1.4mm/.test(docx.doc), "DOCX 含评分评语");
   check(/超窄边框系列 Slimline 1\.0/.test(docx.doc), "DOCX 含亮点产品");

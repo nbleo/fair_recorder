@@ -194,11 +194,10 @@
       for (const c of cs) (buckets[c] = buckets[c] || []).push(s);
     }
     /* 与 scripts/build_report.py 的 grouped_by_category 同口径：
-       品类之间数量多的在前（同数量按 CATEGORIES 表顺序，sort 稳定）；
-       组内可评分的在前、分数高的在前、同分按公司名，免得手机和电脑两边表不同序。 */
+       品类之间一律按 CATEGORIES 表顺序（与表单里 Categories 的排列一致，
+       读者按熟悉的位置找得到）；组内可评分的在前、分数高的在前、同分按公司名，
+       免得手机和电脑两边表不同序。 */
     const keys = Object.keys(buckets).sort((a, b) => {
-      const d = buckets[b].length - buckets[a].length;
-      if (d) return d;
       const ia = order.indexOf(a), ib = order.indexOf(b);
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
@@ -228,11 +227,9 @@ h3{font-size:17px;margin:22px 0 8px}
 .sub{color:var(--mut);font-size:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
 table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
-/* 第 1 章的清单表有 6 列，手机窄屏会挤成一团，包一层横向滚动 */
+/* 第 1 章的清单表列多，手机窄屏会挤成一团，包一层横向滚动 */
 .scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table.list{min-width:660px;table-layout:auto}
-/* keep the rating cell on one line — "Low priority" / "Not ranked" must not wrap */
-table.list td:last-child,table.list th:last-child{white-space:nowrap}
+table.list{min-width:520px;table-layout:auto}
 /* Chapter 1: per-category group heading */
 .grph{font-size:15px;font-weight:700;color:var(--acc);margin:16px 0 8px}
 th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
@@ -392,8 +389,9 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
      这趟展会见了谁。现在按 Categories 分组，逐家列一行（组内评分高的在前），
      一眼能扫到公司名、展位、品类、联系人和评级。
      单元格里的 \n 由两侧渲染各自处理：HTML 转 <br>，DOCX 转多段 w:p。 */
-  const LIST_COLS = ["#", "Company", "Booth / Hall", "Categories", "Contact", "Rating"];
-  const LIST_WIDTHS = [500, 2400, 1200, 1600, 2000, 1939];   // 合计 9639 = A4 版心
+  /* 2026-10 用户要求精简：去掉 Booth / Hall 与 Rating，只留查找必需的几列 */
+  const LIST_COLS = ["#", "Company", "Categories", "Contact"];
+  const LIST_WIDTHS = [500, 3000, 2600, 3539];   // 合计 9639 = A4 版心
 
   /* 旧记录里 hall / area / title 存过中文值，报告必须输出英文，否则分享出去一半中文。 */
   const LEGACY_EN = {
@@ -417,21 +415,21 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
     const who = [s.contactName, valEn(s.contactTitle)].filter(Boolean).join(" / ");
     const ways = [s.phone, s.wechat, s.email].filter(Boolean).join(" · ");
     const contact = [who, ways].filter(Boolean).join("\n") || "—";
-    const rating = [(s._rankable && s._score != null) ? String(s._score) : "—", s._tier || ""]
-      .filter(Boolean).join("\n");
-    return [String(i), s._company || companyOf(s), boothText(s),
-      catsEn(s).join(", ") || "—", contact, rating || "—"];
+    return [String(i), s._company || companyOf(s),
+      catsEn(s).join(", ") || "—", contact];
   }
 
   /* 按 Categories 分组，顺序与第 2 章 Catalogue 一致（CATEGORIES 表顺序）。
      一家同时挂多个品类时会在多个组里各出现一次——清单本来就是查阅索引，
      和 Catalogue 一样"按品类能找到它"优先于"每行只出现一次"。 */
   function listGroups(ctx) {
-    const rows = [];
-    for (const [, name, items] of grouped(ctx)) {
-      rows.push({ name, rows: items.map((s, i) => listRow(s, i + 1)) });
-    }
-    return rows;
+    /* 第 1 章按 Categories 表的固定顺序排（用户要求）：
+       Shower Enclosure → Smart Toilet → Classic Toilet → … → Other。
+       第 2 章 Catalogue 仍按"厂家多的品类在前"，那一章是翻阅用的，不是索引。 */
+    const order = C().CATEGORIES.map((c) => c[0]);
+    const idx = (code) => { const i = order.indexOf(code); return i < 0 ? 99 : i; };
+    return grouped(ctx).slice().sort((a, b) => idx(a[0]) - idx(b[0]))
+      .map(([, name, items]) => ({ name, rows: items.map((s, i) => listRow(s, i + 1)) }));
   }
   /* 兼容旧调用：拍平成"每条一行"的数组（Excel 等按行消费的地方用） */
   function listRows(ctx) {
@@ -513,12 +511,12 @@ tbody tr:nth-child(even) td{background:var(--soft2)}
     const h = [];
     h.push("<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>");
     h.push("<meta name='viewport' content='width=device-width,initial-scale=1'>");
-    h.push(`<title>Factory Report — ${e(ev.name)}</title><style>${CSS}</style></head><body><div class='wrap'>`);
+    h.push(`<title>Fair Visiting Report — ${e(ev.name)}</title><style>${CSS}</style></head><body><div class='wrap'>`);
     h.push("<button id='btnPrint' onclick='window.print()'>🖨 Print / Save as PDF</button>");
 
-    h.push(`<h1>Factory Report — ${e(ev.name)}</h1>`);
+    h.push(`<h1>Fair Visiting Report — ${e(ev.name)}</h1>`);
     h.push(`<div class='sub'>${[e(ev.phase), e(ev.dates), e(ev.venue)].filter(Boolean).join(" · ")}</div>`);
-    h.push(`<div class='sub' style='margin-top:8px'>${ev.prepared_for ? "Prepared for: " + e(ev.prepared_for) + " · " : ""}Generated ${e(ctx.generated_at)}</div>`);
+    h.push(`<div class='sub' style='margin-top:8px'>${ev.prepared_for ? "Report: " + e(ev.prepared_for) + " · " : ""}Generated ${e(ctx.generated_at)}</div>`);
 
     /* 1 —— 工厂清单：总数之后按 Categories 分组，每组一张明细表 */
     h.push("<h2>1. Factory List</h2><div class='card'>");
@@ -883,10 +881,10 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.open
 
     const ev = ctx.event;
     let body = "";
-    body += wPara("Factory Report", { style: "Title" });
+    body += wPara("Fair Visiting Report", { style: "Title" });
     body += wPara(ev.name, { bold: true, size: 13, after: 40 });
     body += wPara([ev.phase, ev.dates, ev.venue].filter(Boolean).join(" · "), { size: 10 });
-    body += wPara("Prepared for: " + (ev.prepared_for || "—"), { size: 10 });
+    body += wPara("Report: " + (ev.prepared_for || "—"), { size: 10 });
     body += wPara("Generated " + ctx.generated_at, { size: 8, italic: true, color: "5C6480" });
 
     /* 1 —— 只留总数统计

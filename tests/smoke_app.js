@@ -90,10 +90,10 @@ const check = (cond, m) => (cond ? ok(m) : bad(m));
   const curFair1 = await page.evaluate(() => FR.fair.id);
   check(fairId1 === curFair1, "新记录挂在当前展会下");
 
-  // 4.1）录入页形态：品类含 Smart Toilet + 新增的 Floor-Standing Toilet，商务条件 / 合规资质已移除
+  // 4.1）录入页形态：品类含 Smart Toilet + Classic Toilet（原 Floor-Standing Toilet），商务条件 / 合规资质已移除
   const formShape = await page.$eval("#editForm", (el) => el.textContent);
   check(/Smart Toilet/.test(formShape), "录入页品类含「Smart Toilet」");
-  check(/Floor-Standing Toilet/.test(formShape), "录入页品类含「Floor-Standing Toilet」（普通马桶）");
+  check(/Classic Toilet/.test(formShape), "录入页品类含「Classic Toilet」（普通马桶）");
   check(!/商务条件|合规资质|MOQ/.test(formShape), "录入页已移除商务条件 / 合规资质");
   check(!/[\u4e00-\u9fa5]/.test(formShape), "录入页不含中文（v2.0 全英文）");
 

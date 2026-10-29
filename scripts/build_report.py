@@ -257,11 +257,9 @@ h3{font-size:17px;margin:22px 0 8px}
 .sub{color:var(--mut);font-size:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
 table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
-/* Chapter 1 table has 6 columns — wrap it so narrow phones scroll sideways instead of squashing */
+/* Chapter 1 table has several columns — wrap it so narrow phones scroll sideways instead of squashing */
 .scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table.list{min-width:660px;table-layout:auto}
-/* keep the rating cell on one line — "Low priority" / "Not ranked" must not wrap */
-table.list td:last-child,table.list th:last-child{white-space:nowrap}
+table.list{min-width:520px;table-layout:auto}
 /* Chapter 1: per-category group heading */
 .grph{font-size:15px;font-weight:700;color:var(--acc);margin:16px 0 8px}
 th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
@@ -441,8 +439,9 @@ def supplier_card_html(ctx: F.Context, s: dict) -> str:
 # ---- 第 1 章 Factory List ------------------------------------------------- #
 # 以前这一章只有一行统计，不翻到第 2 章根本不知道见了谁。现在按 Categories 分组，
 # 每组一张明细表，组内高分在前，和第 2 章 Catalogue 的品类顺序完全一致。
-LIST_COLS = ["#", "Company", "Booth / Hall", "Categories", "Contact", "Rating"]
-LIST_WIDTHS_CM = [0.9, 4.3, 2.1, 2.8, 3.6, 3.3]        # 合计 17.0 cm = A4 版心
+# 2026-10 用户要求精简：去掉 Booth / Hall 与 Rating，只留查找必需的几列
+LIST_COLS = ["#", "Company", "Categories", "Contact"]
+LIST_WIDTHS_CM = [0.9, 5.3, 4.6, 6.2]                   # 合计 17.0 cm = A4 版心
 
 # 旧记录里 hall / area / title / market 存过中文值，输出前统一换成英文，
 # 否则分享出去的报告会一半中文。只在读取时换算，不批量改库。
@@ -470,22 +469,21 @@ def list_row(s: dict, i: int) -> list[str]:
     who = " / ".join(x for x in (s.get("contactName"), value_en(s.get("contactTitle"))) if x)
     ways = " · ".join(x for x in (s.get("phone"), s.get("wechat"), s.get("email")) if x)
     contact = "\n".join(x for x in (who, ways) if x) or "—"
-    # 90.0 这种尾巴看着像精度缺失，能取整就取整
-    sc = s["_score"] if s["_rankable"] and s["_score"] is not None else None
-    sc_txt = "—" if sc is None else f"{sc:.0f}" if float(sc).is_integer() else f"{sc:.1f}"
-    rating = "\n".join(x for x in (sc_txt, s["_tier"] or "") if x) or "—"
-    booth = " / ".join(x for x in (value_en(s.get("hall")), value_en(s.get("area")),
-                                   s.get("boothNo")) if x) or "—"
-    return [str(i), s["_company"], booth, ", ".join(F.categories_en(s)) or "—", contact, rating]
+    return [str(i), s["_company"], ", ".join(F.categories_en(s)) or "—", contact]
 
 
 def list_groups(ctx: F.Context) -> list[tuple[str, list[list[str]]]]:
-    """[(品类名, 行数据)]。品类顺序与组内顺序都沿用 grouped_by_category（多的在前、
-    可评分在前、同分按公司名），这样手机端与电脑端出来的表完全同序。"""
-    out = []
-    for _code, name, items in F.grouped_by_category(ctx):
-        out.append((name, [list_row(s, i + 1) for i, s in enumerate(items)]))
-    return out
+    """[(品类名, 行数据)]。第 1 章按 Categories 表的固定顺序排（用户要求）：
+    Shower Enclosure → Smart Toilet → Classic Toilet → … → Other。
+    组内仍是可评分在前、分数降序、同分按公司名，与手机端同序。
+
+    注意：第 2 章 Catalogue 用的 grouped_by_category() 保持"厂家多的在前"，
+    那一章是翻阅用的；只在第 1 章这张索引表里改成品类表顺序。
+    """
+    order = {code: i for i, (code, _zh, _en) in enumerate(F.CATEGORIES)}
+    rows = sorted(F.grouped_by_category(ctx), key=lambda t: order.get(t[0], 99))
+    return [(name, [list_row(s, i + 1) for i, s in enumerate(items)])
+            for _code, name, items in rows]
 
 
 def list_rows(ctx: F.Context) -> list[list[str]]:
@@ -498,11 +496,11 @@ def write_html(ctx: F.Context, path: Path) -> None:
     total = len(ctx.suppliers)
 
     h = [f"<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>",
-         f"<title>Factory Report — {F.e(ev['name'])}</title><style>{CSS}</style></head><body><div class='wrap'>"]
+         f"<title>Fair Visiting Report — {F.e(ev['name'])}</title><style>{CSS}</style></head><body><div class='wrap'>"]
 
-    h.append(f"<h1>Factory Report — {F.e(ev['name'])}</h1>")
+    h.append(f"<h1>Fair Visiting Report — {F.e(ev['name'])}</h1>")
     h.append(f"<div class='sub'>{F.e(ev['phase'])} · {F.e(ev['dates'])} · {F.e(ev['venue'])}</div>")
-    h.append(f"<div class='sub' style='margin-top:8px'>Prepared for: {F.e(ev['prepared_for'])} · "
+    h.append(f"<div class='sub' style='margin-top:8px'>Report: {F.e(ev['prepared_for'])} · "
              f"Generated {F.e(ctx.generated_at)}</div>")
 
     # 1. Factory List —— 总数 + 按品类分组的明细表
@@ -681,12 +679,12 @@ def write_docx(ctx: F.Context, path: Path) -> None:
                     pp.paragraph_format.line_spacing = 1.0
 
     # ---- Cover ----
-    t = doc.add_heading("Factory Report", level=0)
+    t = doc.add_heading("Fair Visiting Report", level=0)
     t.alignment = WD_ALIGN_PARAGRAPH.LEFT
     para(ev["name"], size=14, bold=True)
     para(f"{ev['phase']} · {ev['dates']}", size=11)
     para(ev["venue"], size=11)
-    para(f"Prepared for: {ev['prepared_for']}", size=11)
+    para(f"Report: {ev['prepared_for']}", size=11)
     para(f"Generated: {ctx.generated_at}", size=9, italic=True)
     doc.add_paragraph()
 

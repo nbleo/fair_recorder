@@ -20,7 +20,7 @@ SCHEMA_VERSION = 2
 CATEGORIES = [
     ("shower_enclosure", "淋浴房整体", "Shower Enclosure"),
     ("smart_toilet", "智能马桶", "Smart Toilet"),
-    ("floor_toilet", "普通马桶", "Floor-Standing Toilet"),
+    ("floor_toilet", "普通马桶", "Classic Toilet"),
     ("tempered_glass", "钢化玻璃", "Tempered Glass"),
     ("aluminium_profile", "铝型材", "Aluminium Profile"),
     ("hardware", "五金配件", "Hardware & Fittings"),
@@ -737,10 +737,10 @@ def grouped_by_category(ctx: Context) -> list[tuple[str, str, list[dict]]]:
         uniq.sort(key=lambda s: (0 if s["_rankable"] else 1,
                                  -(s["_score"] if s["_score"] is not None else -1), s["_company"]))
         out.append((code, CAT_EN.get(code, code), uniq))
-    # 数量多的组在前；数量相同按 CATEGORIES 表顺序。
-    # 只按数量排会让同数量的组保持录入顺序，手机端（app/report.js 的 grouped()）
-    # 却按品类表排，两个通道的章节顺序就对不上了。
-    out.sort(key=lambda t: (-len(t[2]), order.get(t[0], 99)))
+    # 一律按 CATEGORIES 表顺序（与表单里 Categories 的排列一致）。
+    # 早先按"数量多的在前"排，同数量的组会退化成录入顺序，手机端
+    # （app/report.js 的 grouped()）却按品类表排，两个通道的章节顺序就对不上。
+    out.sort(key=lambda t: order.get(t[0], 99))
     return out
 
 

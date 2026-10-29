@@ -61,9 +61,9 @@ srv.listen(PORT, "127.0.0.1", async () => {
   };
 
   await dump("current fair", { topN: 5, withPhotos: true,
-    preparedFor: "Schulte – Shower enclosure sourcing" }, "Factory_Report_EN.html");
+    preparedFor: "Leo" }, "Factory_Report_EN.html");
   await dump("all fairs", { all: true, topN: 5, withPhotos: true,
-    preparedFor: "Schulte – Shower enclosure sourcing" }, "Factory_Report_All_Fairs.html");
+    preparedFor: "Leo" }, "Factory_Report_All_Fairs.html");
 
   const x = await p.evaluate(async () => {
     const c = await FRReport.buildContext({ topN: 5, withPhotos: false });
@@ -79,7 +79,7 @@ srv.listen(PORT, "127.0.0.1", async () => {
   /* v1.7：手机上也能直接出 DOCX（同一段代码，走界面里的「导出 / 分享 DOCX 报告」） */
   const d = await p.evaluate(async () => {
     const c = await FRReport.buildContext({ topN: 5, withPhotos: true,
-      preparedFor: "Schulte – Shower enclosure sourcing" });
+      preparedFor: "Leo" });
     const blob = await FRReport.toDOCX(c);
     const buf = new Uint8Array(await blob.arrayBuffer());
     let s = ""; for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);

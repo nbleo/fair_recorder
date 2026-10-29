@@ -545,9 +545,9 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
       score comments, name cards and highlight products embedded.</div>
   </div>
 
-  <div class="sec">Report header (Prepared for)</div>
+  <div class="sec">Report header (Report: …)</div>
   <div class="card">
-    <input id="rpFor" type="text" placeholder="Schulte – Shower enclosure sourcing" autocapitalize="words">
+    <input id="rpFor" type="text" placeholder="Leo" autocapitalize="words">
     <div class="tiny muted" style="margin-top:6px">Stored on this device only, used on the report cover. Can be blank.</div>
   </div>
 
@@ -664,7 +664,7 @@ button,.btn,.chip,.star,.item,.back,.ph,.x{
 "use strict";
 /* ============================ 常量 ============================ */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.1.0";
 
 /* Fair presets: only prefills city / venue / area. Any fair can be created from scratch. */
 const FAIR_PRESETS = [
@@ -686,8 +686,8 @@ const TITLES = ["","Sales","Manager","Owner","Engineer","Director","Other"];
 const CATEGORIES = [
   ["shower_enclosure","Shower Enclosure","Shower Enclosure"],
   ["smart_toilet","Smart Toilet","Smart Toilet"],
-  /* 新增：普通马桶（落地式，区别于智能马桶） */
-  ["floor_toilet","Floor-Standing Toilet","Floor-Standing Toilet"],
+  /* 普通马桶（落地式，区别于智能马桶）；2026-10 用户要求显示名用 Classic Toilet */
+  ["floor_toilet","Classic Toilet","Classic Toilet"],
   ["tempered_glass","Tempered Glass","Tempered Glass"],
   ["aluminium_profile","Aluminium Profile","Aluminium Profile"],
   ["hardware","Hardware & Fittings","Hardware & Fittings"],
