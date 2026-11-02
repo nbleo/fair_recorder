@@ -115,6 +115,14 @@
     return one.length > 90 ? one.slice(0, 88) + "…" : one;
   }
 
+  /* 给人看的大小：照片动辄几十 MB，日志里写 "35671234 bytes" 没有意义 */
+  function fmtSize(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return Math.round(n / 1024) + " KB";
+    return (n / 1048576).toFixed(1) + " MB";
+  }
+
   /* ============================ 配置 ============================ */
 
   async function loadCfg() {
@@ -240,6 +248,22 @@
     return res.json();
   }
 
+  /* 单张 blob 上限：POST 是幂等的（重复上传只会多一个无用 blob，不改变仓库内容），
+   * 所以网络抖动可以安全重试。4xx 是权限/配额问题，重试没有意义，直接抛。 */
+  async function postBlob(b64) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await api("POST", `/repos/${S.owner}/${S.repo}/git/blobs`,
+          { content: b64, encoding: "base64" });
+      } catch (e) {
+        if (e && e.name === "AbortError") throw e;
+        if (attempt >= 2 || /^4\d\d/.test(String((e && e.message) || ""))) throw e;
+        log(`Upload retry ${attempt + 1}/2 — ${e.message}`);
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+  }
+
   const Syncer = {
     /* fetchStructure: 远端目录结构 */
     async fetchStructure() {
@@ -265,16 +289,31 @@
       return new Blob([arr], { type: "image/jpeg" });
     },
 
-    /* uploadContent: blobs -> tree -> commit -> update ref（一步提交） */
-    async uploadContent(files, message) {
-      /* 1) blob 只传一次：照片最大的开销在这里，重试时不必重传 */
-      const blobs = [];
-      for (const f of files) {
-        const b = await api("POST", `/repos/${S.owner}/${S.repo}/git/blobs`,
-          { content: f.b64, encoding: "base64" });
-        blobs.push({ path: f.path, mode: "100644", type: "blob", sha: b.sha });
-        f.b64 = null;                                   // 边传边释放内存
-      }
+    /* uploadContent: blobs -> tree -> commit -> update ref（一步提交）
+     *
+     * files 里每一项可以是 { path, b64 } 或 { path, lazy: async () => base64 }。
+     * lazy 的意义：照片一次只编码一张，编完立刻上传并释放，而不是先把 100 多张
+     * 全部 base64 化再堆在内存里（几十 MB 的字符串，手机浏览器会直接卡死）。
+     */
+    async uploadContent(files, message, onProgress) {
+      if (!files.length) return null;
+      /* 1) blob 只传一次：照片最大的开销在这里，重试时不必重传。
+       *    并发 3 路：GitHub 允许，且比串行快数倍；再高容易撞二级限流。 */
+      const blobs = new Array(files.length);
+      let cursor = 0, done = 0;
+      const worker = async () => {
+        for (;;) {
+          const i = cursor++;
+          if (i >= files.length) return;
+          const f = files[i];
+          const b64 = f.b64 != null ? f.b64 : (f.lazy ? await f.lazy() : "");
+          blobs[i] = { path: f.path, mode: "100644", type: "blob", sha: (await postBlob(b64)).sha };
+          f.b64 = null; f.lazy = null;                  // 边传边释放
+          done++;
+          if (onProgress) { try { onProgress(done, files.length, f.path); } catch (e) {} }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, files.length) }, worker));
 
       /* 2) 提交。读到的 ref 可能是旧副本（CDN 一致性）或期间被别的设备推进过，
        *    PATCH 会 422 "Update is not a fast forward"。
@@ -572,15 +611,39 @@
       files.push({ path: chunks[i].path, b64: strToBase64(JSON.stringify(body)) });
     }
 
-    /* --- 照片：上传过就不再重传 --- */
+    /* --- 照片：上传过就不再重传；分批提交，断了不用从头再来 --- */
     let newPhotos = 0, skipped = 0;
     if (scope === "full") {
+      const todo = [];
       for (const p of photos) {
-        const pth = assetPath(p.id);
-        if (st.has(pth)) { skipped++; continue; }
-        const blob = ctx ? await encBlob(p.blob, ctx.key) : p.blob;
-        files.push({ path: pth, b64: await blobToBase64(blob) });
-        newPhotos++;
+        if (st.has(assetPath(p.id))) { skipped++; continue; }
+        todo.push(p);
+      }
+      const bytes = todo.reduce((n, p) => n + (p.size || 0), 0);
+      if (todo.length) {
+        log(`${todo.length} new photo(s) to upload (~${fmtSize(bytes)})`
+          + (skipped ? `, ${skipped} already in the cloud` : "")
+          + ". Photos go up a few at a time — each batch is committed, so an "
+          + "interrupted backup resumes instead of starting over.");
+      }
+
+      /* 一批 12 张：一次提交太多，中途断了整批白传；一次一张，提交次数又太多。
+         每批单独 commit，所以传到第 90 张断网，重来时前 7 批会被识别为"已上传"跳过。 */
+      const PHOTO_BATCH = 12;
+      for (let i = 0; i < todo.length; i += PHOTO_BATCH) {
+        const slice = todo.slice(i, i + PHOTO_BATCH);
+        const batch = slice.map((p) => ({
+          path: assetPath(p.id),
+          lazy: async () => blobToBase64(ctx ? await encBlob(p.blob, ctx.key) : p.blob),
+        }));
+        const to = i + slice.length;
+        await Syncer.uploadContent(batch,
+          `FairRecorder photos — ${who()} — ${to}/${todo.length}`,
+          (done) => {
+            const g = i + done;
+            if (g === todo.length || g % 5 === 0) log(`Photos ${g}/${todo.length} uploaded…`);
+          });
+        newPhotos += slice.length;
       }
     }
 
@@ -624,7 +687,8 @@
     await FR.markPushed(S.lastSyncAt);
     log(`${chunks.length} chunk(s); uploading ${dirty.size} dirty chunk(s) / ${newPhotos} new photo(s)`
       + (skipped ? ` (${skipped} already uploaded, skipped)` : ""));
-    return { files: files.length, chunks: dirty.size, photos: newPhotos, skipped, sha: sha.slice(0, 7) };
+    return { files: files.length, chunks: dirty.size, photos: newPhotos, skipped,
+             sha: String(sha || "").slice(0, 7) };
   }
 
   /* ============================ 展会删除（墓碑） ============================
@@ -973,14 +1037,27 @@
 
   const Scheduler = (function () {
     let inflight = null, pending = null;
+    /* 旧实现里 if (inflight) 直接把"正在跑的那个 promise"返回给新调用方，有两个后果：
+     *   1) 第二次点备份拿到的是第一次的结果，日志会重复打印第一次的结论；
+     *   2) 真正排队的那次跑起来时没有任何人 await，抛错被浏览器吞掉——
+     *      日志里就只剩一行 "Starting backup"，看着像卡死，其实早失败了。
+     * 现在每次调用都拿到属于自己的 promise。 */
     function run(fn) {
-      if (inflight) { pending = fn; return inflight; }
+      if (inflight) {
+        return new Promise((resolve, reject) => {
+          if (pending) pending.reject(new Error("superseded"));
+          pending = { fn, resolve, reject };
+        });
+      }
       _ctrl = new AbortController();
       inflight = (async () => {
         try { return await fn(); }
         finally {
           inflight = null; _ctrl = null;
-          if (pending) { const next = pending; pending = null; run(next); }
+          if (pending) {
+            const p = pending; pending = null;
+            run(p.fn).then(p.resolve, p.reject);
+          }
         }
       })();
       return inflight;
@@ -1163,9 +1240,10 @@
 
     const doPush = async (scope, label) => {
       try {
+        if (Scheduler.busy) log("A sync is already running — this request is queued behind it");
         log("Starting backup (" + label + ")...");
         const r = await Scheduler.run(() => push(scope));
-        if (!r) return;                              // 被后来的请求顶掉
+        if (!r) { log("Backup skipped: nothing to upload"); return; }
         log(`Backup done: ${r.files} file(s) (dirty chunks ${r.chunks}, new photos ${r.photos}, `
           + `skipped ${r.skipped}), commit ${r.sha}`);
         FR.toast("Backup done", 4000);
